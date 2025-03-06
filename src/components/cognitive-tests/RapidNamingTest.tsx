@@ -7,6 +7,15 @@ import TestContainer from "./TestContainer";
 import { cognitiveTests, rapidNamingItems } from "@/data/cognitiveTestsData";
 import { saveTestResult } from "@/utils/testUtils";
 
+// Define a mapping of item IDs to placeholder images
+const imagePlaceholders: Record<string, string> = {
+  dog: "https://placehold.co/100x100?text=Dog",
+  cat: "https://placehold.co/100x100?text=Cat",
+  house: "https://placehold.co/100x100?text=House",
+  tree: "https://placehold.co/100x100?text=Tree",
+  book: "https://placehold.co/100x100?text=Book",
+};
+
 const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }> = ({ 
   onComplete, 
   onCancel 
@@ -118,13 +127,9 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
                 }`}
               >
                 <img 
-                  src={`/images/naming-test/${item.id}.png`} 
+                  src={imagePlaceholders[item.id] || "https://placehold.co/100x100?text=Item"}
                   alt={item.id}
                   className="w-16 h-16 object-contain mx-auto"
-                  onError={(e) => {
-                    e.currentTarget.src = "/placeholder.svg";
-                    console.log(`Failed to load image: ${item.id}`);
-                  }}
                 />
               </div>
             ))}
