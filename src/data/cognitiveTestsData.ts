@@ -99,11 +99,11 @@ export const rapidNamingItems: TestItem[] = [
     content: {
       type: "images",
       items: [
-        { id: "dog", url: "/images/tests/ran/dog.svg" },
-        { id: "cat", url: "/images/tests/ran/cat.svg" },
-        { id: "house", url: "/images/tests/ran/house.svg" },
-        { id: "tree", url: "/images/tests/ran/tree.svg" },
-        { id: "book", url: "/images/tests/ran/book.svg" }
+        { id: "dog" },
+        { id: "cat" },
+        { id: "house" },
+        { id: "tree" },
+        { id: "book" }
       ],
       repetitions: 8,
       randomize: true

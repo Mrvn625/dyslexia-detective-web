@@ -118,9 +118,13 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
                 }`}
               >
                 <img 
-                  src={item.url || "/images/placeholder.svg"} // Fallback to placeholder
+                  src={`/images/naming-test/${item.id}.png`} 
                   alt={item.id}
                   className="w-16 h-16 object-contain mx-auto"
+                  onError={(e) => {
+                    e.currentTarget.src = "/placeholder.svg";
+                    console.log(`Failed to load image: ${item.id}`);
+                  }}
                 />
               </div>
             ))}
