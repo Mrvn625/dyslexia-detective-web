@@ -8,6 +8,14 @@ import { cognitiveTests } from "@/data/cognitiveTestsData";
 import TestSelector from "@/components/cognitive-tests/TestSelector";
 import RapidNamingTest from "@/components/cognitive-tests/RapidNamingTest";
 
+interface TestResult {
+  testId: string;
+  score: number;
+  timeSpent: number;
+  completedAt: string;
+  responses: any[];
+}
+
 const CognitiveTests = () => {
   const [selectedTest, setSelectedTest] = useState<string | null>(null);
   const [completedTests, setCompletedTests] = useState<string[]>([]);
@@ -18,8 +26,8 @@ const CognitiveTests = () => {
   useEffect(() => {
     const testResults = localStorage.getItem("testResults");
     if (testResults) {
-      const results = JSON.parse(testResults);
-      const completedTestIds = [...new Set(results.map((r: any) => r.testId))];
+      const results = JSON.parse(testResults) as TestResult[];
+      const completedTestIds = [...new Set(results.map((r: TestResult) => r.testId))];
       setCompletedTests(completedTestIds);
     }
   }, []);
