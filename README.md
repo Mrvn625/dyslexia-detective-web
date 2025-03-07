@@ -1,4 +1,4 @@
-# Welcome to your Lovable project
+# Welcome to our Dyslexia AI project
 
 ## Project info
 
@@ -7,8 +7,6 @@
 ## How can I edit this code?
 
 There are several ways of editing your application.
-
-**Use Lovable**
 
 Simply visit the [Lovable Project](https://lovable.dev/projects/697489d1-b01f-4fa3-bbac-618bc898279c) and start prompting.
 
