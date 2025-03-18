@@ -38,6 +38,16 @@ const Navigation = () => {
               How Tests Work
             </Link>
             <Link
+              to="/user-profile"
+              className={`px-3 py-2 rounded-md ${
+                isActive("/user-profile")
+                  ? "bg-blue-800"
+                  : "hover:bg-blue-700"
+              }`}
+            >
+              User Profile
+            </Link>
+            <Link
               to="/handwriting-analysis"
               className={`px-3 py-2 rounded-md ${
                 isActive("/handwriting-analysis")

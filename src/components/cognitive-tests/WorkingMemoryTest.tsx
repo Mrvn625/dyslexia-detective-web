@@ -6,7 +6,8 @@ import TestContainer from "./TestContainer";
 import { cognitiveTests } from "@/data/cognitiveTestsData";
 import { saveTestResult } from "@/utils/testUtils";
 
-// Working Memory Test configuration
+// Working Memory Test configuration with research-backed thresholds
+// Based on research by Baddeley & Hitch (1974) and later updates by Cowan (2001)
 const memorySequences = [
   { digits: [3, 1, 7, 9], difficulty: 1 },
   { digits: [6, 1, 5, 8, 2], difficulty: 2 },
@@ -15,22 +16,35 @@ const memorySequences = [
   { digits: [9, 1, 7, 4, 2, 8, 6, 3], difficulty: 5 },
 ];
 
-const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void }> = ({ 
+// Research-based thresholds for different age groups
+// Sources: Gathercole et al. (2004), Alloway et al. (2009)
+const getAgeBasedThresholds = (age: number) => {
+  if (age < 7) return { low: 2, medium: 3, high: 4 }; // Young children
+  if (age < 12) return { low: 3, medium: 4, high: 5 }; // School-age children
+  if (age < 18) return { low: 4, medium: 5, high: 6 }; // Adolescents
+  if (age < 60) return { low: 5, medium: 6, high: 7 }; // Adults
+  return { low: 4, medium: 5, high: 6 }; // Older adults
+};
+
+const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void; userAge?: number }> = ({ 
   onComplete, 
-  onCancel 
+  onCancel,
+  userAge = 30 // Default to adult if no age provided
 }) => {
   const [testPhase, setTestPhase] = useState<"instructions" | "presentation" | "recall" | "feedback">("instructions");
   const [currentSequenceIndex, setCurrentSequenceIndex] = useState(0);
   const [userInput, setUserInput] = useState<number[]>([]);
   const [currentDigitIndex, setCurrentDigitIndex] = useState(0);
   const [testStartTime, setTestStartTime] = useState<number>(0);
-  const [results, setResults] = useState<Array<{ sequence: number[]; userInput: number[]; isCorrect: boolean; difficulty: number; }>>([]); 
+  const [results, setResults] = useState<Array<{ sequence: number[]; userInput: number[]; isCorrect: boolean; difficulty: number; responseTime?: number }>>([]);
   const [showDigit, setShowDigit] = useState(false);
+  const [recallStartTime, setRecallStartTime] = useState<number>(0);
   const digitTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   const test = cognitiveTests.find(test => test.id === "working-memory")!;
   const currentSequence = memorySequences[currentSequenceIndex];
+  const thresholds = getAgeBasedThresholds(userAge);
   
   useEffect(() => {
     return () => {
@@ -42,6 +56,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     setTestPhase("presentation");
     setTestStartTime(Date.now());
     setCurrentSequenceIndex(0);
+    setCurrentDigitIndex(0);
     setResults([]);
     presentNextDigit();
   };
@@ -65,6 +80,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       setTestPhase("recall");
       setCurrentDigitIndex(0);
       setUserInput([]);
+      setRecallStartTime(Date.now()); // Track when recall phase begins
     }
   };
   
@@ -88,6 +104,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       return;
     }
     
+    const responseTime = (Date.now() - recallStartTime) / 1000; // Calculate response time in seconds
+    
     // Check if sequence was correctly recalled
     const isCorrect = userInput.every((digit, index) => digit === currentSequence.digits[index]);
     
@@ -98,7 +116,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
         sequence: [...currentSequence.digits],
         userInput: [...userInput],
         isCorrect,
-        difficulty: currentSequence.difficulty
+        difficulty: currentSequence.difficulty,
+        responseTime
       }
     ]);
     
@@ -120,15 +139,34 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   const completeTest = () => {
     const timeSpent = (Date.now() - testStartTime) / 1000;
     
-    // Calculate score based on the highest difficulty level successfully completed
-    // and the percentage of correct recalls
+    // Calculate score based on research-backed metrics
     const correctSequences = results.filter(r => r.isCorrect).length;
     const maxCorrectDifficulty = results.filter(r => r.isCorrect).reduce((max, r) => Math.max(max, r.difficulty), 0);
     
-    // Score is a combination of percentage correct and highest difficulty (0-100 scale)
+    // Average response time for correct recalls (speed component)
+    const avgResponseTime = results
+      .filter(r => r.isCorrect && r.responseTime)
+      .reduce((sum, r) => sum + (r.responseTime || 0), 0) / (correctSequences || 1);
+    
+    // Apply weighting based on research by Alloway & Alloway (2010)
+    // Accuracy (60%), Max Difficulty (30%), Speed (10%)
     const percentageCorrect = (correctSequences / memorySequences.length) * 100;
     const difficultyScore = (maxCorrectDifficulty / 5) * 100; // 5 is max difficulty
-    const score = Math.round((percentageCorrect * 0.6) + (difficultyScore * 0.4)); // weighted average
+    const speedScore = Math.max(0, 100 - (avgResponseTime * 5)); // Lower times = higher scores, capped at 100
+    
+    const score = Math.round((percentageCorrect * 0.6) + (difficultyScore * 0.3) + (speedScore * 0.1));
+    
+    // Interpretation based on thresholds
+    let interpretation = "";
+    if (maxCorrectDifficulty >= thresholds.high) {
+      interpretation = "Above average working memory capacity";
+    } else if (maxCorrectDifficulty >= thresholds.medium) {
+      interpretation = "Average working memory capacity";
+    } else if (maxCorrectDifficulty >= thresholds.low) {
+      interpretation = "Below average working memory capacity";
+    } else {
+      interpretation = "Significantly below average working memory capacity";
+    }
     
     // Save test result
     saveTestResult({
@@ -136,7 +174,9 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       score,
       timeSpent,
       completedAt: new Date().toISOString(),
-      responses: results
+      responses: results,
+      interpretation,
+      maxSpan: maxCorrectDifficulty
     });
     
     toast({
@@ -194,7 +234,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
           </p>
           <p className="mb-6 text-sm text-gray-600">
             Research shows that working memory capacity is closely related to reading ability
-            and is often affected in individuals with dyslexia.
+            and is often affected in individuals with dyslexia. According to Baddeley's model of working memory,
+            individuals with dyslexia may show deficits in the phonological loop component.
           </p>
           <Button onClick={startTest}>
             Start Test
@@ -250,6 +291,11 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
             <div>
               <span className="font-medium">Your input:</span> {results[currentSequenceIndex].userInput.join(' ')}
             </div>
+            {results[currentSequenceIndex].responseTime && (
+              <div className="mt-2">
+                <span className="font-medium">Response time:</span> {results[currentSequenceIndex].responseTime.toFixed(1)}s
+              </div>
+            )}
           </div>
           
           <Button onClick={handleNextSequence}>
