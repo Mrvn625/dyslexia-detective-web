@@ -142,7 +142,15 @@ const CognitiveTests = () => {
 
           <TestSelector onSelectTest={handleSelectTest} />
           
-          <div className="mt-8 text-center">
+          <div className="mt-8 flex flex-col md:flex-row justify-center gap-4">
+            <Button 
+              onClick={() => navigate("/report")}
+              variant="default"
+              className="mx-auto"
+            >
+              Download Report
+            </Button>
+            
             <Button 
               onClick={() => navigate("/results")}
               variant="outline"

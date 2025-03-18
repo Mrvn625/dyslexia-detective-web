@@ -40,17 +40,32 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   const [showDigit, setShowDigit] = useState(false);
   const [recallStartTime, setRecallStartTime] = useState<number>(0);
   const digitTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const presentationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   const test = cognitiveTests.find(test => test.id === "working-memory")!;
   const currentSequence = memorySequences[currentSequenceIndex];
   const thresholds = getAgeBasedThresholds(userAge);
   
+  // Clean up all timers when component unmounts or test changes
   useEffect(() => {
     return () => {
       if (digitTimerRef.current) clearTimeout(digitTimerRef.current);
+      if (presentationTimerRef.current) clearTimeout(presentationTimerRef.current);
     };
   }, []);
+  
+  // Reset timers when moving to a new sequence
+  useEffect(() => {
+    if (testPhase === "presentation") {
+      // Clear any existing timers
+      if (digitTimerRef.current) clearTimeout(digitTimerRef.current);
+      if (presentationTimerRef.current) clearTimeout(presentationTimerRef.current);
+      
+      // Start presentation of first digit
+      startDigitPresentation();
+    }
+  }, [testPhase, currentSequenceIndex]);
   
   const startTest = () => {
     setTestPhase("presentation");
@@ -58,30 +73,33 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     setCurrentSequenceIndex(0);
     setCurrentDigitIndex(0);
     setResults([]);
-    presentNextDigit();
   };
   
-  const presentNextDigit = () => {
-    if (currentDigitIndex < currentSequence.digits.length) {
-      setShowDigit(true);
+  const startDigitPresentation = () => {
+    // Show the current digit
+    setShowDigit(true);
+    
+    // Schedule hiding the digit after 1 second
+    digitTimerRef.current = setTimeout(() => {
+      setShowDigit(false);
       
-      // Show digit for 1 second
-      digitTimerRef.current = setTimeout(() => {
-        setShowDigit(false);
+      // Schedule showing the next digit (or moving to recall) after 0.5 seconds
+      presentationTimerRef.current = setTimeout(() => {
+        const nextDigitIndex = currentDigitIndex + 1;
         
-        // Show blank for 0.5 seconds before next digit
-        digitTimerRef.current = setTimeout(() => {
-          setCurrentDigitIndex(prev => prev + 1);
-          presentNextDigit();
-        }, 500);
-      }, 1000);
-    } else {
-      // All digits presented, move to recall phase
-      setTestPhase("recall");
-      setCurrentDigitIndex(0);
-      setUserInput([]);
-      setRecallStartTime(Date.now()); // Track when recall phase begins
-    }
+        if (nextDigitIndex < currentSequence.digits.length) {
+          // Move to next digit
+          setCurrentDigitIndex(nextDigitIndex);
+          startDigitPresentation();
+        } else {
+          // All digits presented, move to recall phase
+          setTestPhase("recall");
+          setCurrentDigitIndex(0);
+          setUserInput([]);
+          setRecallStartTime(Date.now());
+        }
+      }, 500);
+    }, 1000);
   };
   
   const handleDigitClick = (digit: number) => {
@@ -130,7 +148,6 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       setCurrentSequenceIndex(prev => prev + 1);
       setCurrentDigitIndex(0);
       setTestPhase("presentation");
-      presentNextDigit();
     } else {
       completeTest();
     }
