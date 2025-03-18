@@ -39,6 +39,9 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   const [results, setResults] = useState<Array<{ sequence: number[]; userInput: number[]; isCorrect: boolean; difficulty: number; responseTime?: number }>>([]);
   const [showDigit, setShowDigit] = useState(false);
   const [recallStartTime, setRecallStartTime] = useState<number>(0);
+  const [isTestRunning, setIsTestRunning] = useState(false);
+  
+  // Refs for managing timers
   const digitTimerRef = useRef<NodeJS.Timeout | null>(null);
   const presentationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
@@ -50,22 +53,34 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   // Clean up all timers when component unmounts or test changes
   useEffect(() => {
     return () => {
-      if (digitTimerRef.current) clearTimeout(digitTimerRef.current);
-      if (presentationTimerRef.current) clearTimeout(presentationTimerRef.current);
+      clearAllTimers();
     };
   }, []);
   
-  // Reset timers when moving to a new sequence
+  // Reset timers when moving to a new sequence or phase changes
   useEffect(() => {
-    if (testPhase === "presentation") {
-      // Clear any existing timers
-      if (digitTimerRef.current) clearTimeout(digitTimerRef.current);
-      if (presentationTimerRef.current) clearTimeout(presentationTimerRef.current);
+    if (testPhase === "presentation" && isTestRunning) {
+      clearAllTimers();
       
-      // Start presentation of first digit
-      startDigitPresentation();
+      // Small delay before starting presentation to ensure clean state
+      const startTimer = setTimeout(() => {
+        startDigitPresentation();
+      }, 300);
+      
+      return () => clearTimeout(startTimer);
     }
-  }, [testPhase, currentSequenceIndex]);
+  }, [testPhase, currentSequenceIndex, isTestRunning]);
+  
+  const clearAllTimers = () => {
+    if (digitTimerRef.current) {
+      clearTimeout(digitTimerRef.current);
+      digitTimerRef.current = null;
+    }
+    if (presentationTimerRef.current) {
+      clearTimeout(presentationTimerRef.current);
+      presentationTimerRef.current = null;
+    }
+  };
   
   const startTest = () => {
     setTestPhase("presentation");
@@ -73,9 +88,13 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     setCurrentSequenceIndex(0);
     setCurrentDigitIndex(0);
     setResults([]);
+    setIsTestRunning(true);
   };
   
   const startDigitPresentation = () => {
+    // Safety check to ensure component is still mounted
+    if (!isTestRunning) return;
+    
     // Show the current digit
     setShowDigit(true);
     
@@ -85,6 +104,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       
       // Schedule showing the next digit (or moving to recall) after 0.5 seconds
       presentationTimerRef.current = setTimeout(() => {
+        if (!isTestRunning) return;
+        
         const nextDigitIndex = currentDigitIndex + 1;
         
         if (nextDigitIndex < currentSequence.digits.length) {
@@ -154,6 +175,9 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   };
   
   const completeTest = () => {
+    setIsTestRunning(false);
+    clearAllTimers();
+    
     const timeSpent = (Date.now() - testStartTime) / 1000;
     
     // Calculate score based on research-backed metrics
@@ -238,7 +262,11 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       currentStep={currentSequenceIndex + 1}
       totalSteps={memorySequences.length}
       onComplete={completeTest}
-      onCancel={onCancel}
+      onCancel={() => {
+        clearAllTimers();
+        setIsTestRunning(false);
+        onCancel();
+      }}
     >
       {testPhase === "instructions" && (
         <div className="text-center py-6">
