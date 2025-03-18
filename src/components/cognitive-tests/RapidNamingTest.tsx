@@ -24,8 +24,10 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [testStartTime, setTestStartTime] = useState<number | null>(null);
   const [testItems, setTestItems] = useState<any[]>([]);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const { toast } = useToast();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const test = cognitiveTests.find(test => test.id === "rapid-naming")!;
   const testItem = rapidNamingItems[0]; // Using the first test item for now
@@ -48,6 +50,11 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
       
       setTestItems(items);
     }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [testItem]);
 
   const startRecording = () => {
@@ -58,19 +65,22 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
     
     setIsRecording(true);
     setTestStartTime(Date.now());
+    setCurrentItemIndex(0);
     
-    // In a real implementation, we would use the Web Speech API
-    // or another recording mechanism
-    
-    // For now, we'll simulate with a timer
-    timerRef.current = setTimeout(() => {
-      completeTest();
-    }, 20000); // 20 seconds for demo purposes
+    // Start timing the test
+    const startTime = Date.now();
+    intervalRef.current = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
   };
   
   const completeTest = () => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
+    }
+    
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
     }
     
     setIsRecording(false);
@@ -79,23 +89,40 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
       const timeSpent = (Date.now() - testStartTime) / 1000; // in seconds
       
       // Calculate items per second (measure of naming speed)
-      const itemsPerSecond = testItems.length / timeSpent;
+      const itemsPerSecond = (currentItemIndex + 1) / timeSpent;
+      
+      // Calculate normalized score (0-100 scale)
+      // Research shows typical naming speeds are 2-3 items per second
+      // We'll use a scale where 3 items/sec = 100 points
+      const normalizedScore = Math.min(100, Math.round(itemsPerSecond * 33.33));
       
       // Save test result
       saveTestResult({
         testId: "rapid-naming",
-        score: itemsPerSecond * 10, // Scale for easier interpretation
+        score: normalizedScore,
         timeSpent,
         completedAt: new Date().toISOString(),
-        responses: [] // No item-by-item responses for this test
+        responses: [{ 
+          itemsNamed: currentItemIndex + 1,
+          totalItems: testItems.length,
+          itemsPerSecond: itemsPerSecond.toFixed(2)
+        }]
       });
       
       toast({
         title: "Test completed",
-        description: `You named ${testItems.length} items in ${timeSpent.toFixed(1)} seconds`,
+        description: `You named ${currentItemIndex + 1} of ${testItems.length} items in ${timeSpent.toFixed(1)} seconds`,
       });
       
       onComplete();
+    }
+  };
+  
+  const handleNextItem = () => {
+    if (currentItemIndex < testItems.length - 1) {
+      setCurrentItemIndex(prev => prev + 1);
+    } else {
+      completeTest();
     }
   };
   
@@ -103,6 +130,11 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
+    
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
     onCancel();
   };
   
@@ -114,40 +146,58 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
       onComplete={completeTest}
       onCancel={handleCancel}
       showTimer={isRecording}
-      timeRemaining={isRecording ? 20 : undefined} // Fixed at 20 seconds for demo
+      timeRemaining={isRecording ? 60 - elapsedTime : undefined} // 60 second max time
     >
       {isRecording ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-5 gap-4">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="flex justify-between w-full items-center mb-2">
+              <div className="text-sm font-medium">
+                Progress: {currentItemIndex + 1} / {testItems.length}
+              </div>
+              <div className="text-sm font-medium">
+                Time: {elapsedTime}s
+              </div>
+            </div>
+            
+            {currentItemIndex < testItems.length && (
+              <div className="flex flex-col items-center justify-center p-4 border rounded-md bg-white shadow-sm">
+                <div className="text-xl font-medium mb-2">Name this image:</div>
+                <img 
+                  src={imagePlaceholders[testItems[currentItemIndex].id] || "https://placehold.co/200x200?text=Item"}
+                  alt={testItems[currentItemIndex].id}
+                  className="w-32 h-32 object-contain mb-4"
+                />
+                <div className="text-lg font-bold text-gray-500">
+                  {/* Normally hidden - shown for demonstration */}
+                  ({testItems[currentItemIndex].id})
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="text-center mt-6">
+            <Button onClick={handleNextItem} className="w-full sm:w-auto px-8">
+              {currentItemIndex < testItems.length - 1 ? "Next Item" : "Finish Test"}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-5 gap-2 mt-4">
             {testItems.slice(0, 20).map((item, index) => (
               <div 
                 key={index} 
-                className={`p-2 rounded-md transition-all duration-300 ${
-                  index === currentItemIndex ? "ring-2 ring-blue-500 scale-110" : ""
+                className={`p-1 border rounded-md transition-all duration-300 ${
+                  index === currentItemIndex ? "ring-2 ring-blue-500 bg-blue-50" : 
+                  index < currentItemIndex ? "bg-gray-100 opacity-50" : ""
                 }`}
               >
                 <img 
-                  src={imagePlaceholders[item.id] || "https://placehold.co/100x100?text=Item"}
+                  src={imagePlaceholders[item.id] || "https://placehold.co/80x80?text=Item"}
                   alt={item.id}
-                  className="w-16 h-16 object-contain mx-auto"
+                  className="w-10 h-10 object-contain mx-auto"
                 />
               </div>
             ))}
-          </div>
-          
-          <div className="text-center">
-            <Button 
-              variant="outline" 
-              onClick={() => setCurrentItemIndex(prev => 
-                prev < testItems.length - 1 ? prev + 1 : prev
-              )}
-              className="mr-2"
-            >
-              Next Item
-            </Button>
-            <Button onClick={completeTest}>
-              Finish Test
-            </Button>
           </div>
         </div>
       ) : (
@@ -156,8 +206,12 @@ const RapidNamingTest: React.FC<{ onComplete: () => void; onCancel: () => void }
             You will see a series of images that you need to name quickly. 
             The test will measure how fast you can name familiar objects.
           </p>
+          <p className="mb-6 text-sm text-gray-600">
+            Research shows that individuals with dyslexia often have difficulty
+            with rapid automatic naming, which can affect reading fluency.
+          </p>
           <Button onClick={startRecording}>
-            Start Recording
+            Start Test
           </Button>
         </div>
       )}

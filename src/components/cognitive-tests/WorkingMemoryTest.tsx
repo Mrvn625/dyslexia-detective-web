@@ -1,0 +1,264 @@
+
+import React, { useState, useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import TestContainer from "./TestContainer";
+import { cognitiveTests } from "@/data/cognitiveTestsData";
+import { saveTestResult } from "@/utils/testUtils";
+
+// Working Memory Test configuration
+const memorySequences = [
+  { digits: [3, 1, 7, 9], difficulty: 1 },
+  { digits: [6, 1, 5, 8, 2], difficulty: 2 },
+  { digits: [8, 3, 5, 7, 9, 1], difficulty: 3 },
+  { digits: [2, 5, 1, 7, 3, 9, 4], difficulty: 4 },
+  { digits: [9, 1, 7, 4, 2, 8, 6, 3], difficulty: 5 },
+];
+
+const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void }> = ({ 
+  onComplete, 
+  onCancel 
+}) => {
+  const [testPhase, setTestPhase] = useState<"instructions" | "presentation" | "recall" | "feedback">("instructions");
+  const [currentSequenceIndex, setCurrentSequenceIndex] = useState(0);
+  const [userInput, setUserInput] = useState<number[]>([]);
+  const [currentDigitIndex, setCurrentDigitIndex] = useState(0);
+  const [testStartTime, setTestStartTime] = useState<number>(0);
+  const [results, setResults] = useState<Array<{ sequence: number[]; userInput: number[]; isCorrect: boolean; difficulty: number; }>>([]); 
+  const [showDigit, setShowDigit] = useState(false);
+  const digitTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+  
+  const test = cognitiveTests.find(test => test.id === "working-memory")!;
+  const currentSequence = memorySequences[currentSequenceIndex];
+  
+  useEffect(() => {
+    return () => {
+      if (digitTimerRef.current) clearTimeout(digitTimerRef.current);
+    };
+  }, []);
+  
+  const startTest = () => {
+    setTestPhase("presentation");
+    setTestStartTime(Date.now());
+    setCurrentSequenceIndex(0);
+    setResults([]);
+    presentNextDigit();
+  };
+  
+  const presentNextDigit = () => {
+    if (currentDigitIndex < currentSequence.digits.length) {
+      setShowDigit(true);
+      
+      // Show digit for 1 second
+      digitTimerRef.current = setTimeout(() => {
+        setShowDigit(false);
+        
+        // Show blank for 0.5 seconds before next digit
+        digitTimerRef.current = setTimeout(() => {
+          setCurrentDigitIndex(prev => prev + 1);
+          presentNextDigit();
+        }, 500);
+      }, 1000);
+    } else {
+      // All digits presented, move to recall phase
+      setTestPhase("recall");
+      setCurrentDigitIndex(0);
+      setUserInput([]);
+    }
+  };
+  
+  const handleDigitClick = (digit: number) => {
+    if (testPhase === "recall") {
+      setUserInput(prev => [...prev, digit]);
+    }
+  };
+  
+  const handleBackspace = () => {
+    setUserInput(prev => prev.slice(0, -1));
+  };
+  
+  const handleSubmit = () => {
+    if (userInput.length !== currentSequence.digits.length) {
+      toast({
+        title: "Incomplete input",
+        description: `Please enter ${currentSequence.digits.length} digits`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check if sequence was correctly recalled
+    const isCorrect = userInput.every((digit, index) => digit === currentSequence.digits[index]);
+    
+    // Record result
+    setResults(prev => [
+      ...prev,
+      {
+        sequence: [...currentSequence.digits],
+        userInput: [...userInput],
+        isCorrect,
+        difficulty: currentSequence.difficulty
+      }
+    ]);
+    
+    // Show feedback
+    setTestPhase("feedback");
+  };
+  
+  const handleNextSequence = () => {
+    if (currentSequenceIndex < memorySequences.length - 1) {
+      setCurrentSequenceIndex(prev => prev + 1);
+      setCurrentDigitIndex(0);
+      setTestPhase("presentation");
+      presentNextDigit();
+    } else {
+      completeTest();
+    }
+  };
+  
+  const completeTest = () => {
+    const timeSpent = (Date.now() - testStartTime) / 1000;
+    
+    // Calculate score based on the highest difficulty level successfully completed
+    // and the percentage of correct recalls
+    const correctSequences = results.filter(r => r.isCorrect).length;
+    const maxCorrectDifficulty = results.filter(r => r.isCorrect).reduce((max, r) => Math.max(max, r.difficulty), 0);
+    
+    // Score is a combination of percentage correct and highest difficulty (0-100 scale)
+    const percentageCorrect = (correctSequences / memorySequences.length) * 100;
+    const difficultyScore = (maxCorrectDifficulty / 5) * 100; // 5 is max difficulty
+    const score = Math.round((percentageCorrect * 0.6) + (difficultyScore * 0.4)); // weighted average
+    
+    // Save test result
+    saveTestResult({
+      testId: "working-memory",
+      score,
+      timeSpent,
+      completedAt: new Date().toISOString(),
+      responses: results
+    });
+    
+    toast({
+      title: "Test completed",
+      description: `Your score: ${score}% (${correctSequences} of ${memorySequences.length} sequences correct)`,
+    });
+    
+    onComplete();
+  };
+  
+  const renderDigitPad = () => {
+    return (
+      <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto mt-4">
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(digit => (
+          <button
+            key={digit}
+            className="bg-white border rounded-md p-4 text-2xl font-bold hover:bg-gray-100 active:bg-gray-200"
+            onClick={() => handleDigitClick(digit)}
+          >
+            {digit}
+          </button>
+        ))}
+        <button
+          className="bg-white border rounded-md p-4 text-sm font-medium col-span-2 hover:bg-gray-100 active:bg-gray-200"
+          onClick={() => handleDigitClick(0)}
+        >
+          0
+        </button>
+        <button
+          className="bg-white border rounded-md p-4 text-sm font-medium hover:bg-gray-100 active:bg-gray-200"
+          onClick={handleBackspace}
+        >
+          ←
+        </button>
+      </div>
+    );
+  };
+  
+  return (
+    <TestContainer
+      test={test}
+      currentStep={currentSequenceIndex + 1}
+      totalSteps={memorySequences.length}
+      onComplete={completeTest}
+      onCancel={onCancel}
+    >
+      {testPhase === "instructions" && (
+        <div className="text-center py-6">
+          <p className="mb-4">
+            This test evaluates your working memory - the ability to temporarily hold and manipulate information.
+          </p>
+          <p className="mb-6 text-sm text-gray-600">
+            You'll be shown a sequence of digits one at a time. After the sequence is complete, 
+            you'll need to recall and input the digits in the exact order they were presented.
+          </p>
+          <p className="mb-6 text-sm text-gray-600">
+            Research shows that working memory capacity is closely related to reading ability
+            and is often affected in individuals with dyslexia.
+          </p>
+          <Button onClick={startTest}>
+            Start Test
+          </Button>
+        </div>
+      )}
+      
+      {testPhase === "presentation" && (
+        <div className="flex flex-col items-center justify-center py-10">
+          <div className="text-sm mb-4">Watch the sequence carefully</div>
+          
+          <div className="h-40 w-40 flex items-center justify-center border-2 rounded-md bg-slate-50">
+            {showDigit ? (
+              <span className="text-6xl font-bold">{currentSequence.digits[currentDigitIndex]}</span>
+            ) : (
+              <span className="text-sm text-gray-400">Next digit coming...</span>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {testPhase === "recall" && (
+        <div className="flex flex-col items-center">
+          <p className="mb-4 text-center">Enter the sequence in the order it was presented</p>
+          
+          <div className="flex items-center justify-center border rounded-md p-4 min-h-16 min-w-40 bg-white mb-4">
+            <div className="text-3xl font-mono tracking-wide">
+              {userInput.join(' ')}
+              <span className="animate-pulse ml-1">|</span>
+            </div>
+          </div>
+          
+          {renderDigitPad()}
+          
+          <div className="mt-6">
+            <Button onClick={handleSubmit} disabled={userInput.length !== currentSequence.digits.length}>
+              Submit Answer
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      {testPhase === "feedback" && (
+        <div className="text-center py-6">
+          <h3 className="text-xl font-medium mb-4">
+            {results[currentSequenceIndex].isCorrect ? "Correct!" : "Incorrect"}
+          </h3>
+          
+          <div className="bg-slate-50 p-4 rounded-md max-w-xs mx-auto mb-6">
+            <div className="mb-2">
+              <span className="font-medium">Correct sequence:</span> {results[currentSequenceIndex].sequence.join(' ')}
+            </div>
+            <div>
+              <span className="font-medium">Your input:</span> {results[currentSequenceIndex].userInput.join(' ')}
+            </div>
+          </div>
+          
+          <Button onClick={handleNextSequence}>
+            {currentSequenceIndex < memorySequences.length - 1 ? "Next Sequence" : "Complete Test"}
+          </Button>
+        </div>
+      )}
+    </TestContainer>
+  );
+};
+
+export default WorkingMemoryTest;

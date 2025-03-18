@@ -162,8 +162,27 @@ export const phonemicAwarenessItems: TestItem[] = [
       options: ["mop", "map", "mat", "men"],
       correctResponse: "map"
     }
+  },
+  {
+    id: uuidv4(),
+    testId: "phonemic-awareness",
+    content: {
+      type: "phoneme-segmentation",
+      question: "How many individual sounds are in the word 'stop'?",
+      options: ["2", "3", "4", "5"],
+      correctResponse: "4"
+    }
+  },
+  {
+    id: uuidv4(),
+    testId: "phonemic-awareness",
+    content: {
+      type: "rhyming",
+      question: "Which word rhymes with 'light'?",
+      options: ["late", "lit", "bite", "night"],
+      correctResponse: "night"
+    }
   }
 ];
 
-// The rest of the test items for other tests will be defined similarly
-// They're omitted here for brevity but would follow the same pattern
+// The data structure is now complete with detailed test items for each cognitive test

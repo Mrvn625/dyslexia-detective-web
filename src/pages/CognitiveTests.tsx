@@ -7,14 +7,12 @@ import { useNavigate } from "react-router-dom";
 import { cognitiveTests } from "@/data/cognitiveTestsData";
 import TestSelector from "@/components/cognitive-tests/TestSelector";
 import RapidNamingTest from "@/components/cognitive-tests/RapidNamingTest";
-
-interface TestResult {
-  testId: string;
-  score: number;
-  timeSpent: number;
-  completedAt: string;
-  responses: any[];
-}
+import PhonemicAwarenessTest from "@/components/cognitive-tests/PhonemicAwarenessTest";
+import WorkingMemoryTest from "@/components/cognitive-tests/WorkingMemoryTest";
+import VisualProcessingTest from "@/components/cognitive-tests/VisualProcessingTest";
+import ProcessingSpeedTest from "@/components/cognitive-tests/ProcessingSpeedTest";
+import SequencingTest from "@/components/cognitive-tests/SequencingTest";
+import { TestResult } from "@/data/cognitiveTestsData";
 
 const CognitiveTests = () => {
   const [selectedTest, setSelectedTest] = useState<string | null>(null);
@@ -71,25 +69,39 @@ const CognitiveTests = () => {
           />
         );
       case "phonemic-awareness":
-      case "working-memory":
-      case "visual-processing":
-      case "processing-speed":
-      case "sequencing":
-        // For now, show a placeholder for tests that aren't implemented yet
         return (
-          <Card className="max-w-3xl mx-auto mt-8">
-            <CardContent className="py-8">
-              <div className="text-center">
-                <h3 className="text-xl font-medium mb-4">Coming Soon</h3>
-                <p className="mb-6">
-                  This test is currently under development. Please try one of the other available tests.
-                </p>
-                <Button onClick={() => setSelectedTest(null)}>
-                  Return to Test Selection
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <PhonemicAwarenessTest
+            onComplete={handleCompleteTest}
+            onCancel={handleCancelTest}
+          />
+        );
+      case "working-memory":
+        return (
+          <WorkingMemoryTest
+            onComplete={handleCompleteTest}
+            onCancel={handleCancelTest}
+          />
+        );
+      case "visual-processing":
+        return (
+          <VisualProcessingTest
+            onComplete={handleCompleteTest}
+            onCancel={handleCancelTest}
+          />
+        );
+      case "processing-speed":
+        return (
+          <ProcessingSpeedTest
+            onComplete={handleCompleteTest}
+            onCancel={handleCancelTest}
+          />
+        );
+      case "sequencing":
+        return (
+          <SequencingTest
+            onComplete={handleCompleteTest}
+            onCancel={handleCancelTest}
+          />
         );
       default:
         return null;
