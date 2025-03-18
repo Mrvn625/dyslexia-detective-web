@@ -2,8 +2,20 @@
 import React, { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
+import { 
+  DndContext, 
+  closestCenter, 
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors 
+} from "@dnd-kit/core";
+import { 
+  arrayMove, 
+  SortableContext, 
+  sortableKeyboardCoordinates, 
+  useSortable 
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import TestContainer from "./TestContainer";
 import { cognitiveTests } from "@/data/cognitiveTestsData";
