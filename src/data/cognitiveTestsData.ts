@@ -1,4 +1,3 @@
-
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CognitiveTest {
@@ -25,6 +24,8 @@ export interface TestResult {
   timeSpent: number;
   completedAt: string;
   responses: any[];
+  interpretation?: string; // Added interpretation property
+  maxSpan?: number; // Added maxSpan property for memory tests
 }
 
 // Scientifically validated dyslexia assessment tests
