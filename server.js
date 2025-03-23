@@ -15,77 +15,121 @@ app.use(bodyParser.json());
 let testResults = [];
 let userProfiles = [];
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Routes
 // Get all test results
 app.get('/api/test-results', (req, res) => {
-  res.json(testResults);
+  try {
+    res.json(testResults);
+  } catch (error) {
+    console.error('Error fetching all test results:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 });
 
 // Get test results for a specific user
 app.get('/api/test-results/:userId', (req, res) => {
-  const userResults = testResults.filter(result => result.userId === req.params.userId);
-  res.json(userResults);
+  try {
+    const userResults = testResults.filter(result => result.userId === req.params.userId);
+    res.json(userResults);
+  } catch (error) {
+    console.error(`Error fetching test results for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 });
 
 // Save test result
 app.post('/api/test-results', (req, res) => {
-  const newResult = {
-    id: uuidv4(),
-    ...req.body,
-    createdAt: new Date().toISOString()
-  };
-  
-  testResults.push(newResult);
-  res.status(201).json(newResult);
+  try {
+    const newResult = {
+      id: uuidv4(),
+      ...req.body,
+      createdAt: new Date().toISOString()
+    };
+    
+    testResults.push(newResult);
+    res.status(201).json(newResult);
+  } catch (error) {
+    console.error('Error saving test result:', error);
+    res.status(500).json({ message: 'Error saving test result', error: error.message });
+  }
 });
 
 // User profile endpoints
 app.get('/api/users/:userId', (req, res) => {
-  const user = userProfiles.find(profile => profile.id === req.params.userId);
-  if (!user) {
-    return res.status(404).json({ message: 'User not found' });
+  try {
+    const user = userProfiles.find(profile => profile.id === req.params.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error(`Error fetching user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
-  res.json(user);
 });
 
 app.post('/api/users', (req, res) => {
-  const newUser = {
-    id: uuidv4(),
-    ...req.body,
-    createdAt: new Date().toISOString()
-  };
-  
-  userProfiles.push(newUser);
-  res.status(201).json(newUser);
+  try {
+    const newUser = {
+      id: uuidv4(),
+      ...req.body,
+      createdAt: new Date().toISOString()
+    };
+    
+    userProfiles.push(newUser);
+    res.status(201).json(newUser);
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ message: 'Error creating user', error: error.message });
+  }
 });
 
 app.put('/api/users/:userId', (req, res) => {
-  const userIndex = userProfiles.findIndex(profile => profile.id === req.params.userId);
-  
-  if (userIndex === -1) {
-    return res.status(404).json({ message: 'User not found' });
+  try {
+    const userIndex = userProfiles.findIndex(profile => profile.id === req.params.userId);
+    
+    if (userIndex === -1) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    userProfiles[userIndex] = {
+      ...userProfiles[userIndex],
+      ...req.body,
+      updatedAt: new Date().toISOString()
+    };
+    
+    res.json(userProfiles[userIndex]);
+  } catch (error) {
+    console.error(`Error updating user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Error updating user', error: error.message });
   }
-  
-  userProfiles[userIndex] = {
-    ...userProfiles[userIndex],
-    ...req.body,
-    updatedAt: new Date().toISOString()
-  };
-  
-  res.json(userProfiles[userIndex]);
 });
 
 // Generate recommendations based on test results
 app.get('/api/recommendations/:userId', (req, res) => {
-  const userResults = testResults.filter(result => result.userId === req.params.userId);
-  
-  if (userResults.length === 0) {
-    return res.status(404).json({ message: 'No test results found for this user' });
+  try {
+    const userResults = testResults.filter(result => result.userId === req.params.userId);
+    
+    if (userResults.length === 0) {
+      return res.status(404).json({ message: 'No test results found for this user' });
+    }
+    
+    // This is a simplified version - will be expanded with actual recommendation logic
+    const recommendations = generateRecommendations(userResults);
+    res.json({ recommendations });
+  } catch (error) {
+    console.error(`Error generating recommendations for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Error generating recommendations', error: error.message });
   }
-  
-  // This is a simplified version - will be expanded with actual recommendation logic
-  const recommendations = generateRecommendations(userResults);
-  res.json({ recommendations });
 });
 
 // Helper function (move to a separate file later)
@@ -122,4 +166,12 @@ function generateRecommendations(results) {
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
 });

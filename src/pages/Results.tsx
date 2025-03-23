@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,31 +7,94 @@ import { Progress } from "@/components/ui/progress";
 import { ChecklistResponse } from "@/types/checklist";
 import { checklistItems, checklistCategories } from "@/data/checklistData";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, CheckCircle2, Circle } from "lucide-react";
+import { Info, CheckCircle2, Circle, FileDown } from "lucide-react";
 import { TestResult, cognitiveTests } from "@/data/cognitiveTestsData";
 import { getTestResults } from "@/utils/testUtils";
+import { getTestResults as getServerTestResults } from "@/services/api";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const Results = () => {
   const [checklistResults, setChecklistResults] = useState<ChecklistResponse | null>(null);
   const [cognitiveTestResults, setCognitiveTestResults] = useState<TestResult[]>([]);
+  const [serverResults, setServerResults] = useState<TestResult[]>([]);
   const [activeTab, setActiveTab] = useState("summary");
   const [hasCompletedAnyTest, setHasCompletedAnyTest] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
-    // Load checklist results from localStorage
-    const savedChecklistResults = localStorage.getItem("checklistResults");
-    if (savedChecklistResults) {
-      setChecklistResults(JSON.parse(savedChecklistResults));
-      setHasCompletedAnyTest(true);
-    }
+    // Function to load all data
+    const loadData = async () => {
+      setIsLoading(true);
+      
+      try {
+        // Load checklist results from localStorage
+        const savedChecklistResults = localStorage.getItem("checklistResults");
+        if (savedChecklistResults) {
+          setChecklistResults(JSON.parse(savedChecklistResults));
+        }
+        
+        // Load cognitive test results from localStorage
+        const localTestResults = getTestResults();
+        if (localTestResults && localTestResults.length > 0) {
+          setCognitiveTestResults(localTestResults);
+        }
+        
+        // Try to load results from server if user is logged in
+        const userId = localStorage.getItem("userId");
+        if (userId) {
+          try {
+            const results = await getServerTestResults(userId);
+            setServerResults(results);
+            
+            // Merge results if needed - server results take precedence
+            if (results && results.length > 0) {
+              // Create a map of test IDs to their most recent result
+              const resultMap = new Map();
+              
+              // First add local results
+              localTestResults.forEach(result => {
+                resultMap.set(result.testId, result);
+              });
+              
+              // Then override with server results if they exist
+              results.forEach(result => {
+                resultMap.set(result.testId, result);
+              });
+              
+              // Convert map back to array
+              const mergedResults = Array.from(resultMap.values());
+              setCognitiveTestResults(mergedResults);
+            }
+          } catch (error) {
+            console.error("Error fetching results from server:", error);
+            // Fall back to local results only
+          }
+        }
+        
+        // Set flag if any tests are completed
+        if ((savedChecklistResults || (localTestResults && localTestResults.length > 0))) {
+          setHasCompletedAnyTest(true);
+        }
+      } catch (error) {
+        console.error("Error loading data:", error);
+        toast({
+          title: "Error loading results",
+          description: "There was a problem loading your assessment results.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    // Load cognitive test results
-    const testResults = getTestResults();
-    if (testResults && testResults.length > 0) {
-      setCognitiveTestResults(testResults);
-      setHasCompletedAnyTest(true);
-    }
-  }, []);
+    loadData();
+  }, [toast]);
 
   // Calculate checklist category score
   const calculateCategoryScore = (categoryId: string) => {
@@ -91,6 +155,11 @@ const Results = () => {
     return getCategoryRiskLevel(avgScore);
   };
 
+  // Navigate to the download report page
+  const handleDownloadReport = () => {
+    navigate("/report");
+  };
+
   // Render message when no data is available
   const renderNoDataMessage = () => (
     <Card className="my-8">
@@ -100,11 +169,11 @@ const Results = () => {
           <p className="text-gray-600 mb-6">
             You haven't completed any assessments yet. Complete at least one assessment to see your results.
           </p>
-          <div className="space-x-4">
-            <Button variant="outline" onClick={() => window.location.href = "/checklist"}>
+          <div className={`${isMobile ? 'flex flex-col space-y-4' : 'space-x-4'}`}>
+            <Button variant="outline" onClick={() => navigate("/checklist")}>
               Take Checklist Assessment
             </Button>
-            <Button onClick={() => window.location.href = "/cognitive-tests"}>
+            <Button onClick={() => navigate("/cognitive-tests")}>
               Try Cognitive Tests
             </Button>
           </div>
@@ -117,16 +186,35 @@ const Results = () => {
     <div className="container mx-auto py-8 px-4">
       <h1 className="text-3xl font-bold mb-6 text-center text-blue-700">Assessment Results</h1>
       
-      {!hasCompletedAnyTest ? (
+      {isLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-pulse flex flex-col items-center">
+            <div className="h-8 w-64 bg-gray-200 rounded mb-4"></div>
+            <div className="h-4 w-48 bg-gray-200 rounded"></div>
+          </div>
+        </div>
+      ) : !hasCompletedAnyTest ? (
         renderNoDataMessage()
       ) : (
         <>
           <Card className="max-w-4xl mx-auto mb-8">
             <CardHeader>
-              <CardTitle>Your Dyslexia Risk Assessment</CardTitle>
-              <CardDescription>
-                These results are based on the assessments you've completed. More comprehensive results will be available as you complete additional tests.
-              </CardDescription>
+              <div className="flex justify-between items-start flex-wrap gap-4">
+                <div>
+                  <CardTitle>Your Dyslexia Risk Assessment</CardTitle>
+                  <CardDescription>
+                    These results are based on the assessments you've completed. More comprehensive results will be available as you complete additional tests.
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={handleDownloadReport}
+                  className="flex items-center gap-2"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Download Report
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="p-4 bg-blue-50 border border-blue-100 rounded-md mb-4">
@@ -157,12 +245,23 @@ const Results = () => {
 
           <Card className="max-w-4xl mx-auto">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid grid-cols-4 w-full">
+              <TabsList className={`${isMobile ? 'grid-cols-2' : 'grid-cols-4'} grid w-full`}>
                 <TabsTrigger value="summary">Summary</TabsTrigger>
                 <TabsTrigger value="checklist" disabled={!checklistResults}>Checklist</TabsTrigger>
-                <TabsTrigger value="cognitive" disabled={cognitiveTestResults.length === 0}>Cognitive Tests</TabsTrigger>
-                <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                {!isMobile && (
+                  <TabsTrigger value="cognitive" disabled={cognitiveTestResults.length === 0}>Cognitive Tests</TabsTrigger>
+                )}
+                {!isMobile && (
+                  <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                )}
               </TabsList>
+              
+              {isMobile && (
+                <TabsList className="grid grid-cols-2 w-full mt-1">
+                  <TabsTrigger value="cognitive" disabled={cognitiveTestResults.length === 0}>Cognitive Tests</TabsTrigger>
+                  <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                </TabsList>
+              )}
 
               <TabsContent value="summary" className="p-6">
                 <h3 className="text-xl font-medium mb-4">Assessment Overview</h3>
@@ -249,6 +348,16 @@ const Results = () => {
                       or dyslexia specialist.
                     </AlertDescription>
                   </Alert>
+                  
+                  <div className="text-center mt-6">
+                    <Button 
+                      onClick={handleDownloadReport}
+                      className="flex items-center gap-2 mx-auto"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Download Full Report
+                    </Button>
+                  </div>
                 </div>
               </TabsContent>
 
@@ -308,7 +417,7 @@ const Results = () => {
                             <Button 
                               variant="outline" 
                               size="sm"
-                              onClick={() => window.location.href = "/cognitive-tests"}
+                              onClick={() => navigate("/cognitive-tests")}
                             >
                               Take Test
                             </Button>
@@ -340,6 +449,11 @@ const Results = () => {
                               <div className="text-sm text-gray-600">
                                 <div>Time Spent: {Math.round(result.timeSpent)} seconds</div>
                                 <div>Completed: {new Date(result.completedAt).toLocaleDateString()}</div>
+                                {result.interpretation && (
+                                  <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100">
+                                    <strong>Interpretation:</strong> {result.interpretation}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </CardContent>
@@ -347,12 +461,20 @@ const Results = () => {
                       );
                     })}
                     
-                    <div className="mt-4">
+                    <div className="mt-4 flex flex-wrap gap-4 justify-center">
                       <Button 
                         variant="outline" 
-                        onClick={() => window.location.href = "/cognitive-tests"}
+                        onClick={() => navigate("/cognitive-tests")}
                       >
                         Take More Tests
+                      </Button>
+                      
+                      <Button 
+                        onClick={handleDownloadReport}
+                        className="flex items-center gap-2"
+                      >
+                        <FileDown className="h-4 w-4" />
+                        Download Report
                       </Button>
                     </div>
                   </div>
@@ -361,7 +483,7 @@ const Results = () => {
                     <p className="text-gray-600 mb-6">
                       You haven't completed any cognitive tests yet.
                     </p>
-                    <Button onClick={() => window.location.href = "/cognitive-tests"}>
+                    <Button onClick={() => navigate("/cognitive-tests")}>
                       Go to Cognitive Tests
                     </Button>
                   </div>
@@ -457,6 +579,16 @@ const Results = () => {
                       <li>Color-coding systems for organization</li>
                       <li>Breaking tasks into smaller, manageable parts</li>
                     </ul>
+                  </div>
+                  
+                  <div className="text-center mt-6">
+                    <Button 
+                      onClick={handleDownloadReport}
+                      className="flex items-center gap-2 mx-auto"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Download Comprehensive Report
+                    </Button>
                   </div>
                 </div>
               </TabsContent>

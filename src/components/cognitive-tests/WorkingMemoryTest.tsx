@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import TestContainer from "./TestContainer";
 import { cognitiveTests } from "@/data/cognitiveTestsData";
 import { saveTestResult } from "@/utils/testUtils";
+import { saveTestResultToServer } from "@/services/api";
 
 // Working Memory Test configuration with research-backed thresholds
 // Based on research by Baddeley & Hitch (1974) and later updates by Cowan (2001)
@@ -41,14 +42,15 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   const [recallStartTime, setRecallStartTime] = useState<number>(0);
   const [isTestRunning, setIsTestRunning] = useState(false);
   
-  // Refs for managing timers
-  const digitTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const presentationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   const test = cognitiveTests.find(test => test.id === "working-memory")!;
   const currentSequence = memorySequences[currentSequenceIndex];
   const thresholds = getAgeBasedThresholds(userAge);
+  
+  // These refs will track our timers to ensure we can clean them up properly
+  const digitTimerRef = useRef<number | null>(null);
+  const presentationTimerRef = useRef<number | null>(null);
   
   // Clean up all timers when component unmounts or test changes
   useEffect(() => {
@@ -63,21 +65,21 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       clearAllTimers();
       
       // Small delay before starting presentation to ensure clean state
-      const startTimer = setTimeout(() => {
+      const startTimer = window.setTimeout(() => {
         startDigitPresentation();
-      }, 300);
+      }, 500);
       
-      return () => clearTimeout(startTimer);
+      return () => window.clearTimeout(startTimer);
     }
   }, [testPhase, currentSequenceIndex, isTestRunning]);
   
   const clearAllTimers = () => {
-    if (digitTimerRef.current) {
-      clearTimeout(digitTimerRef.current);
+    if (digitTimerRef.current !== null) {
+      window.clearTimeout(digitTimerRef.current);
       digitTimerRef.current = null;
     }
-    if (presentationTimerRef.current) {
-      clearTimeout(presentationTimerRef.current);
+    if (presentationTimerRef.current !== null) {
+      window.clearTimeout(presentationTimerRef.current);
       presentationTimerRef.current = null;
     }
   };
@@ -99,11 +101,11 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     setShowDigit(true);
     
     // Schedule hiding the digit after 1 second
-    digitTimerRef.current = setTimeout(() => {
+    digitTimerRef.current = window.setTimeout(() => {
       setShowDigit(false);
       
       // Schedule showing the next digit (or moving to recall) after 0.5 seconds
-      presentationTimerRef.current = setTimeout(() => {
+      presentationTimerRef.current = window.setTimeout(() => {
         if (!isTestRunning) return;
         
         const nextDigitIndex = currentDigitIndex + 1;
@@ -209,8 +211,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       interpretation = "Significantly below average working memory capacity";
     }
     
-    // Save test result
-    saveTestResult({
+    // Create the result object
+    const testResult = {
       testId: "working-memory",
       score,
       timeSpent,
@@ -218,7 +220,21 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       responses: results,
       interpretation,
       maxSpan: maxCorrectDifficulty
-    });
+    };
+    
+    // Save test result locally
+    saveTestResult(testResult);
+    
+    // Also save to server if user is logged in (for future implementation)
+    try {
+      const userId = localStorage.getItem("userId");
+      if (userId) {
+        saveTestResultToServer(testResult, userId)
+          .catch(err => console.error("Error saving test result to server:", err));
+      }
+    } catch (error) {
+      console.error("Error saving to server:", error);
+    }
     
     toast({
       title: "Test completed",

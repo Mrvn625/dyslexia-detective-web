@@ -1,8 +1,10 @@
 
 import axios from 'axios';
 import { TestResult } from '@/data/cognitiveTestsData';
+import { UserProfile } from '@/types/user';
 
-const API_URL = 'http://localhost:5000/api';
+// Get API URL from environment variables or use default
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Configure axios
 const api = axios.create({
@@ -35,16 +37,6 @@ export const getTestResults = async (userId?: string) => {
 };
 
 // User profile API
-export interface UserProfile {
-  id?: string;
-  name: string;
-  age: number;
-  gender: string;
-  education?: string;
-  medicalHistory?: string;
-  contactInfo?: string;
-}
-
 export const saveUserProfile = async (profile: UserProfile) => {
   try {
     if (profile.id) {
@@ -78,5 +70,16 @@ export const getRecommendations = async (userId: string) => {
   } catch (error) {
     console.error('Error fetching recommendations:', error);
     return [];
+  }
+};
+
+// Health check API
+export const checkServerStatus = async () => {
+  try {
+    const response = await api.get('/health');
+    return response.data.status === 'ok';
+  } catch (error) {
+    console.error('Server health check failed:', error);
+    return false;
   }
 };
