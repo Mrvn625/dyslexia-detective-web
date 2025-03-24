@@ -2,40 +2,100 @@
 import React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { cognitiveTests } from "@/data/cognitiveTestsData";
+import { getTestResult } from "@/utils/testUtils";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { useProfileCheck } from "@/hooks/useProfileCheck";
 
-interface TestSelectorProps {
+const TestSelector: React.FC<{ 
   onSelectTest: (testId: string) => void;
-}
-
-const TestSelector: React.FC<TestSelectorProps> = ({ onSelectTest }) => {
+  className?: string;
+}> = ({ onSelectTest, className = "" }) => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { hasProfile, isLoading } = useProfileCheck();
+  
+  const handleSelectTest = (testId: string) => {
+    if (!hasProfile && !isLoading) {
+      toast({
+        title: "Profile Required",
+        description: "Please create a user profile before taking cognitive tests for accurate results.",
+        variant: "destructive",
+      });
+      navigate("/profile");
+      return;
+    }
+    
+    onSelectTest(testId);
+  };
+  
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
-      {cognitiveTests.map((test) => (
-        <Card key={test.id}>
-          <CardHeader>
-            <CardTitle>{test.title}</CardTitle>
-            <CardDescription>{test.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm">
-              {test.instructions}
+    <div className={`space-y-6 ${className}`}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {cognitiveTests.map(test => {
+          const completedTest = getTestResult(test.id);
+          
+          return (
+            <Card key={test.id} className="h-full flex flex-col">
+              <CardHeader>
+                <CardTitle className="flex items-start justify-between">
+                  <span>{test.title}</span>
+                  {completedTest && <CheckCircle className="h-5 w-5 text-green-500 ml-2 flex-shrink-0" />}
+                </CardTitle>
+                <CardDescription className="flex items-center">
+                  <Clock className="h-4 w-4 mr-1" /> {test.duration}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow">
+                <p className="text-sm">{test.description}</p>
+                
+                {completedTest && (
+                  <div className="mt-4 p-2 bg-gray-50 rounded border text-sm">
+                    <div>
+                      <span className="font-medium">Last Score:</span> {Math.round(completedTest.score)}/100
+                    </div>
+                    <div>
+                      <span className="font-medium">Completed:</span> {new Date(completedTest.completedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter>
+                <Button 
+                  variant={completedTest ? "outline" : "default"} 
+                  className="w-full"
+                  onClick={() => handleSelectTest(test.id)}
+                >
+                  {completedTest ? "Retake Test" : "Start Test"}
+                </Button>
+              </CardFooter>
+            </Card>
+          );
+        })}
+      </div>
+      
+      {!hasProfile && !isLoading && (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-amber-800 flex items-start">
+          <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" /> 
+          <div>
+            <p className="font-medium">Profile Required</p>
+            <p className="text-sm mt-1">
+              Creating a user profile is strongly recommended before taking cognitive tests.
+              Your age and other information helps calibrate the test results appropriately.
             </p>
-            <div className="mt-4 bg-gray-100 p-3 rounded-md text-sm">
-              <strong>Time:</strong> {test.duration}<br />
-              <strong>Complexity:</strong> {test.complexity.charAt(0).toUpperCase() + test.complexity.slice(1)}
-            </div>
-          </CardContent>
-          <CardFooter>
             <Button 
-              className="w-full" 
-              onClick={() => onSelectTest(test.id)}
+              variant="outline" 
+              size="sm" 
+              className="mt-2 bg-white"
+              onClick={() => navigate("/profile")}
             >
-              Start Test
+              Create Profile
             </Button>
-          </CardFooter>
-        </Card>
-      ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

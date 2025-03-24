@@ -14,6 +14,7 @@ app.use(bodyParser.json());
 // In-memory storage (replace with your database later)
 let testResults = [];
 let userProfiles = [];
+let handwritingResults = [];
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -85,6 +86,21 @@ app.post('/api/users', (req, res) => {
       createdAt: new Date().toISOString()
     };
     
+    // Calculate age group based on age
+    if (newUser.age) {
+      if (newUser.age < 6) {
+        newUser.ageGroup = "preschool";
+      } else if (newUser.age < 13) {
+        newUser.ageGroup = "school";
+      } else if (newUser.age < 18) {
+        newUser.ageGroup = "adolescent";
+      } else if (newUser.age < 60) {
+        newUser.ageGroup = "adult";
+      } else {
+        newUser.ageGroup = "senior";
+      }
+    }
+    
     userProfiles.push(newUser);
     res.status(201).json(newUser);
   } catch (error) {
@@ -101,16 +117,49 @@ app.put('/api/users/:userId', (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     
-    userProfiles[userIndex] = {
+    const updatedUser = {
       ...userProfiles[userIndex],
       ...req.body,
       updatedAt: new Date().toISOString()
     };
     
-    res.json(userProfiles[userIndex]);
+    // Recalculate age group if age changed
+    if (req.body.age) {
+      if (req.body.age < 6) {
+        updatedUser.ageGroup = "preschool";
+      } else if (req.body.age < 13) {
+        updatedUser.ageGroup = "school";
+      } else if (req.body.age < 18) {
+        updatedUser.ageGroup = "adolescent";
+      } else if (req.body.age < 60) {
+        updatedUser.ageGroup = "adult";
+      } else {
+        updatedUser.ageGroup = "senior";
+      }
+    }
+    
+    userProfiles[userIndex] = updatedUser;
+    
+    res.json(updatedUser);
   } catch (error) {
     console.error(`Error updating user ${req.params.userId}:`, error);
     res.status(500).json({ message: 'Error updating user', error: error.message });
+  }
+});
+
+// Validate profile existence
+app.get('/api/validate-profile/:userId', (req, res) => {
+  try {
+    const user = userProfiles.find(profile => profile.id === req.params.userId);
+    res.json({ 
+      exists: !!user,
+      profileCompleted: !!user,
+      userAge: user ? user.age : null,
+      ageGroup: user ? user.ageGroup : null
+    });
+  } catch (error) {
+    console.error(`Error validating profile for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
@@ -129,6 +178,42 @@ app.get('/api/recommendations/:userId', (req, res) => {
   } catch (error) {
     console.error(`Error generating recommendations for user ${req.params.userId}:`, error);
     res.status(500).json({ message: 'Error generating recommendations', error: error.message });
+  }
+});
+
+// Handwriting analysis endpoints
+app.post('/api/handwriting-analysis', (req, res) => {
+  try {
+    const newAnalysis = {
+      id: uuidv4(),
+      ...req.body,
+      completedAt: new Date().toISOString()
+    };
+    
+    handwritingResults.push(newAnalysis);
+    res.status(201).json(newAnalysis);
+  } catch (error) {
+    console.error('Error saving handwriting analysis:', error);
+    res.status(500).json({ message: 'Error saving analysis', error: error.message });
+  }
+});
+
+app.get('/api/handwriting-analysis/:userId', (req, res) => {
+  try {
+    const userResults = handwritingResults.filter(result => result.userId === req.params.userId);
+    if (userResults.length === 0) {
+      return res.status(404).json({ message: 'No handwriting analysis found for this user' });
+    }
+    
+    // Return the most recent analysis
+    const mostRecent = userResults.sort((a, b) => 
+      new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+    )[0];
+    
+    res.json(mostRecent);
+  } catch (error) {
+    console.error(`Error fetching handwriting analysis for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 

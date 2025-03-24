@@ -4,24 +4,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { ChecklistResponse } from "@/types/checklist";
-import { checklistItems, checklistCategories } from "@/data/checklistData";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, CheckCircle2, Circle, FileDown } from "lucide-react";
+import { Info, CheckCircle2, Circle, FileDown, ArrowRight, AlertCircle } from "lucide-react";
 import { TestResult, cognitiveTests } from "@/data/cognitiveTestsData";
 import { getTestResults } from "@/utils/testUtils";
-import { getTestResults as getServerTestResults } from "@/services/api";
+import { getTestResults as getServerTestResults, getUserProfile } from "@/services/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { checklistItems, checklistCategories, ageGroups } from "@/data/checklistData";
 
 const Results = () => {
-  const [checklistResults, setChecklistResults] = useState<ChecklistResponse | null>(null);
+  const [checklistResults, setChecklistResults] = useState<any>(null);
   const [cognitiveTestResults, setCognitiveTestResults] = useState<TestResult[]>([]);
+  const [handwritingResults, setHandwritingResults] = useState<any>(null);
   const [serverResults, setServerResults] = useState<TestResult[]>([]);
   const [activeTab, setActiveTab] = useState("summary");
   const [hasCompletedAnyTest, setHasCompletedAnyTest] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -33,10 +34,27 @@ const Results = () => {
       setIsLoading(true);
       
       try {
+        // Try to get user profile
+        const userId = localStorage.getItem("userId");
+        if (userId) {
+          try {
+            const profile = await getUserProfile(userId);
+            setUserProfile(profile);
+          } catch (error) {
+            console.error("Error fetching user profile:", error);
+          }
+        }
+        
         // Load checklist results from localStorage
         const savedChecklistResults = localStorage.getItem("checklistResults");
         if (savedChecklistResults) {
           setChecklistResults(JSON.parse(savedChecklistResults));
+        }
+        
+        // Load handwriting analysis results if available
+        const savedHandwritingResults = localStorage.getItem("handwritingResults");
+        if (savedHandwritingResults) {
+          setHandwritingResults(JSON.parse(savedHandwritingResults));
         }
         
         // Load cognitive test results from localStorage
@@ -46,7 +64,6 @@ const Results = () => {
         }
         
         // Try to load results from server if user is logged in
-        const userId = localStorage.getItem("userId");
         if (userId) {
           try {
             const results = await getServerTestResults(userId);
@@ -78,7 +95,7 @@ const Results = () => {
         }
         
         // Set flag if any tests are completed
-        if ((savedChecklistResults || (localTestResults && localTestResults.length > 0))) {
+        if ((savedChecklistResults || (localTestResults && localTestResults.length > 0) || savedHandwritingResults)) {
           setHasCompletedAnyTest(true);
         }
       } catch (error) {
@@ -96,12 +113,23 @@ const Results = () => {
     loadData();
   }, [toast]);
 
-  // Calculate checklist category score
+  // Calculate checklist category score based on responses
   const calculateCategoryScore = (categoryId: string) => {
-    if (!checklistResults) return 0;
+    if (!checklistResults?.responses) return 0;
     
-    const categoryItems = checklistItems.filter(item => item.category === categoryId);
-    const positiveResponses = categoryItems.filter(item => checklistResults[item.id] === true);
+    // Get the age group from the results or default to "school"
+    const ageGroup = checklistResults.ageGroup || "school";
+    
+    // Get items in this category for the specific age group
+    const categoryItems = checklistItems.filter(
+      item => item.category === categoryId && item.ageGroups.includes(ageGroup)
+    );
+    
+    // If no items for this category and age group, return 0
+    if (categoryItems.length === 0) return 0;
+    
+    // Count positive responses 
+    const positiveResponses = categoryItems.filter(item => checklistResults.responses[item.id] === true);
     
     return (positiveResponses.length / categoryItems.length) * 100;
   };
@@ -127,9 +155,20 @@ const Results = () => {
     return { level: "High", color: "text-red-600" };
   };
 
+  // Get handwriting analysis risk level
+  const getHandwritingRiskLevel = () => {
+    if (!handwritingResults) return { level: "Not Taken", color: "text-gray-400" };
+    
+    const score = handwritingResults.dyslexiaIndicatorScore || 0;
+    
+    if (score >= 70) return { level: "High", color: "text-red-600" };
+    if (score >= 40) return { level: "Moderate", color: "text-amber-600" };
+    return { level: "Low", color: "text-green-600" };
+  };
+
   // Get overall risk level
   const getOverallRiskLevel = () => {
-    if (!checklistResults && cognitiveTestResults.length === 0) {
+    if (!checklistResults?.responses && cognitiveTestResults.length === 0 && !handwritingResults) {
       return { level: "Unknown", color: "text-gray-600" };
     }
     
@@ -137,10 +176,20 @@ const Results = () => {
     let divisor = 0;
     
     // Include checklist scores
-    if (checklistResults) {
-      const categoryScores = checklistCategories.map(cat => calculateCategoryScore(cat.id));
-      totalScore += categoryScores.reduce((sum, score) => sum + score, 0);
-      divisor += categoryScores.length;
+    if (checklistResults?.responses) {
+      const categoryScores = checklistCategories.map(cat => calculateCategoryScore(cat.id))
+        .filter(score => score > 0); // Only include categories that have results
+      
+      if (categoryScores.length > 0) {
+        totalScore += categoryScores.reduce((sum, score) => sum + score, 0);
+        divisor += categoryScores.length;
+      }
+    }
+    
+    // Include handwriting analysis score
+    if (handwritingResults) {
+      totalScore += handwritingResults.dyslexiaIndicatorScore || 0;
+      divisor += 1;
     }
     
     // Include cognitive test scores (reversed because higher is better)
@@ -160,27 +209,75 @@ const Results = () => {
     navigate("/report");
   };
 
+  const navigateToNextAssessment = () => {
+    if (!checklistResults) {
+      navigate("/checklist");
+      return;
+    }
+    
+    if (!handwritingResults) {
+      navigate("/handwriting-analysis");
+      return;
+    }
+    
+    const incompleteTests = cognitiveTests.filter(test => 
+      !cognitiveTestResults.some(result => result.testId === test.id)
+    );
+    
+    if (incompleteTests.length > 0) {
+      navigate("/cognitive-tests");
+      return;
+    }
+    
+    // If everything is completed
+    toast({
+      title: "All assessments complete",
+      description: "You've completed all available assessments. View your comprehensive report for insights.",
+    });
+  };
+
   // Render message when no data is available
-  const renderNoDataMessage = () => (
-    <Card className="my-8">
-      <CardContent className="pt-6">
-        <div className="text-center py-8">
-          <h3 className="text-xl font-medium mb-2">No Assessment Data Available</h3>
-          <p className="text-gray-600 mb-6">
-            You haven't completed any assessments yet. Complete at least one assessment to see your results.
-          </p>
-          <div className={`${isMobile ? 'flex flex-col space-y-4' : 'space-x-4'}`}>
-            <Button variant="outline" onClick={() => navigate("/checklist")}>
-              Take Checklist Assessment
-            </Button>
-            <Button onClick={() => navigate("/cognitive-tests")}>
-              Try Cognitive Tests
-            </Button>
+  const renderNoDataMessage = () => {
+    const hasProfile = userProfile !== null;
+    
+    return (
+      <Card className="my-8">
+        <CardContent className="pt-6">
+          <div className="text-center py-8">
+            <h3 className="text-xl font-medium mb-2">No Assessment Data Available</h3>
+            <p className="text-gray-600 mb-6">
+              You haven't completed any assessments yet. Complete at least one assessment to see your results.
+            </p>
+            {!hasProfile && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Profile Required</AlertTitle>
+                <AlertDescription>
+                  Please set up your profile before taking assessments to ensure accurate results.
+                </AlertDescription>
+              </Alert>
+            )}
+            <div className={`${isMobile ? 'flex flex-col space-y-4' : 'space-x-4'}`}>
+              {!hasProfile ? (
+                <Button onClick={() => navigate("/profile")}>
+                  Create Your Profile
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => navigate("/checklist")}>
+                    Take Checklist Assessment
+                  </Button>
+                  <Button onClick={() => navigate("/cognitive-tests")}>
+                    Try Cognitive Tests
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -235,12 +332,119 @@ const Results = () => {
                     {getOverallRiskLevel().level}
                   </span>
                   <span className="text-gray-500">
-                    Based on {checklistResults ? "checklist" : ""}{checklistResults && cognitiveTestResults.length > 0 ? " and " : ""}
-                    {cognitiveTestResults.length > 0 ? "cognitive tests" : ""}
+                    Based on {[
+                      checklistResults ? "checklist" : "",
+                      handwritingResults ? "handwriting analysis" : "",
+                      cognitiveTestResults.length > 0 ? "cognitive tests" : ""
+                    ].filter(Boolean).join(", ")}
                   </span>
                 </div>
               </div>
+              
+              <div className="mt-8 border-t pt-4">
+                <h3 className="text-lg font-medium mb-4">Assessment Progress</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Checklist Card */}
+                  <Card className={checklistResults ? "border-green-300" : "border-gray-200"}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center mb-2">
+                        {checklistResults ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500 mr-2" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-gray-300 mr-2" />
+                        )}
+                        <h4 className="font-medium">Symptom Checklist</h4>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {checklistResults 
+                          ? `Completed for ${ageGroups.find(g => g.id === checklistResults.ageGroup)?.name || 'selected'} age group`
+                          : "A questionnaire to identify dyslexia traits"
+                        }
+                      </p>
+                      {!checklistResults && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="w-full"
+                          onClick={() => navigate("/checklist")}
+                        >
+                          Take Assessment
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Handwriting Card */}
+                  <Card className={handwritingResults ? "border-green-300" : "border-gray-200"}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center mb-2">
+                        {handwritingResults ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500 mr-2" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-gray-300 mr-2" />
+                        )}
+                        <h4 className="font-medium">Handwriting Analysis</h4>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {handwritingResults 
+                          ? `Completed on ${new Date(handwritingResults.completedAt).toLocaleDateString()}`
+                          : "Analyzes handwriting patterns for dyslexia indicators"
+                        }
+                      </p>
+                      {!handwritingResults && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="w-full"
+                          onClick={() => navigate("/handwriting-analysis")}
+                        >
+                          Take Assessment
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Cognitive Tests Card */}
+                  <Card className={cognitiveTestResults.length > 0 ? "border-green-300" : "border-gray-200"}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center mb-2">
+                        {cognitiveTestResults.length > 0 ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500 mr-2" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-gray-300 mr-2" />
+                        )}
+                        <h4 className="font-medium">Cognitive Tests</h4>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {cognitiveTestResults.length 
+                          ? `${cognitiveTestResults.length} of ${cognitiveTests.length} tests completed`
+                          : "Interactive tests of cognitive functions related to dyslexia"
+                        }
+                      </p>
+                      {cognitiveTestResults.length < cognitiveTests.length && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="w-full"
+                          onClick={() => navigate("/cognitive-tests")}
+                        >
+                          {cognitiveTestResults.length > 0 ? "Continue Tests" : "Take Tests"}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </CardContent>
+            <CardFooter className="border-t pt-4">
+              <Button 
+                onClick={navigateToNextAssessment}
+                className="flex items-center gap-2 w-full"
+              >
+                Continue to Next Assessment
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardFooter>
           </Card>
 
           <Card className="max-w-4xl mx-auto">
@@ -252,14 +456,14 @@ const Results = () => {
                   <TabsTrigger value="cognitive" disabled={cognitiveTestResults.length === 0}>Cognitive Tests</TabsTrigger>
                 )}
                 {!isMobile && (
-                  <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                  <TabsTrigger value="handwriting" disabled={!handwritingResults}>Handwriting</TabsTrigger>
                 )}
               </TabsList>
               
               {isMobile && (
                 <TabsList className="grid grid-cols-2 w-full mt-1">
                   <TabsTrigger value="cognitive" disabled={cognitiveTestResults.length === 0}>Cognitive Tests</TabsTrigger>
-                  <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                  <TabsTrigger value="handwriting" disabled={!handwritingResults}>Handwriting</TabsTrigger>
                 </TabsList>
               )}
 
@@ -279,8 +483,12 @@ const Results = () => {
                         <span>Symptom Checklist</span>
                       </div>
                       <div className="flex items-center">
-                        <Circle className="w-4 h-4 text-gray-300 mr-2" />
-                        <span>Handwriting Analysis (Not completed)</span>
+                        {handwritingResults ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-500 mr-2" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-gray-300 mr-2" />
+                        )}
+                        <span>Handwriting Analysis</span>
                       </div>
                       <div className="flex items-center">
                         {cognitiveTestResults.length > 0 ? (
@@ -301,6 +509,9 @@ const Results = () => {
                       <div className="space-y-4">
                         {checklistCategories.map(category => {
                           const score = calculateCategoryScore(category.id);
+                          // Skip categories with no results for this age group
+                          if (score === 0) return null;
+                          
                           const risk = getCategoryRiskLevel(score);
                           
                           return (
@@ -313,6 +524,34 @@ const Results = () => {
                             </div>
                           );
                         })}
+                      </div>
+                    </div>
+                  )}
+
+                  {handwritingResults && (
+                    <div>
+                      <h4 className="font-medium mb-2">Handwriting Analysis Results</h4>
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span>Dyslexia Indicators</span>
+                            <span className={getHandwritingRiskLevel().color}>
+                              {getHandwritingRiskLevel().level} Risk
+                            </span>
+                          </div>
+                          <Progress value={handwritingResults.dyslexiaIndicatorScore || 0} className="h-2" />
+                        </div>
+                        
+                        {handwritingResults.keyFeatures && (
+                          <div className="bg-gray-50 p-3 rounded text-sm">
+                            <p className="font-medium mb-1">Key Features Identified:</p>
+                            <ul className="list-disc pl-5">
+                              {handwritingResults.keyFeatures.map((feature: string, index: number) => (
+                                <li key={index}>{feature}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -362,12 +601,26 @@ const Results = () => {
               </TabsContent>
 
               <TabsContent value="checklist" className="p-6">
-                {checklistResults && (
+                {checklistResults ? (
                   <div className="space-y-8">
                     <h3 className="text-xl font-medium mb-2">Detailed Checklist Results</h3>
+                    <p className="text-gray-600">
+                      Age Group: <span className="font-medium">
+                        {ageGroups.find(g => g.id === checklistResults.ageGroup)?.name || 'Unknown'} 
+                        ({ageGroups.find(g => g.id === checklistResults.ageGroup)?.ageRange})
+                      </span>
+                    </p>
                     
                     {checklistCategories.map(category => {
-                      const categoryItems = checklistItems.filter(item => item.category === category.id);
+                      // Get items for this category and age group
+                      const categoryItems = checklistItems.filter(
+                        item => item.category === category.id && 
+                        item.ageGroups.includes(checklistResults.ageGroup || "school")
+                      );
+                      
+                      // Skip categories with no items for this age group
+                      if (categoryItems.length === 0) return null;
+                      
                       const score = calculateCategoryScore(category.id);
                       const risk = getCategoryRiskLevel(score);
                       
@@ -385,9 +638,9 @@ const Results = () => {
                             {categoryItems.map(item => (
                               <div key={item.id} className="flex items-start">
                                 <div className={`w-4 h-4 rounded-full mt-1 mr-2 ${
-                                  checklistResults[item.id] === true ? 'bg-red-500' : 'bg-gray-300'
+                                  checklistResults.responses[item.id] === true ? 'bg-red-500' : 'bg-gray-300'
                                 }`}></div>
-                                <span className={checklistResults[item.id] === true ? 'font-medium' : ''}>
+                                <span className={checklistResults.responses[item.id] === true ? 'font-medium' : ''}>
                                   {item.question}
                                 </span>
                               </div>
@@ -396,6 +649,28 @@ const Results = () => {
                         </div>
                       );
                     })}
+                    
+                    <div className="flex justify-center mt-4">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => navigate("/checklist")}
+                        className="mr-2"
+                      >
+                        Retake Assessment
+                      </Button>
+                      <Button onClick={navigateToNextAssessment}>
+                        Continue Testing
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 mb-6">
+                      You haven't completed the checklist assessment yet.
+                    </p>
+                    <Button onClick={() => navigate("/checklist")}>
+                      Take Checklist Assessment
+                    </Button>
                   </div>
                 )}
               </TabsContent>
@@ -490,107 +765,121 @@ const Results = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="recommendations" className="p-6">
-                <h3 className="text-xl font-medium mb-4">Recommendations & Resources</h3>
+              <TabsContent value="handwriting" className="p-6">
+                <h3 className="text-xl font-medium mb-4">Handwriting Analysis</h3>
                 
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-lg font-medium mb-2">Next Steps</h4>
-                    <ul className="list-disc pl-6 space-y-2">
-                      <li>Complete all available assessments for a more comprehensive profile</li>
-                      <li>Consult with an educational psychologist or dyslexia specialist for formal evaluation</li>
-                      <li>Share these results with teachers, tutors, or support staff who work with you or your child</li>
-                      <li>Explore dyslexia support organizations for additional resources and community</li>
-                    </ul>
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-lg font-medium mb-2">Helpful Resources</h4>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Card>
-                        <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-base">International Dyslexia Association</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-sm">Comprehensive information, research, and resources about dyslexia</p>
-                        </CardContent>
-                        <CardFooter className="p-4 pt-0">
-                          <a href="https://dyslexiaida.org/" target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm">Visit Website</Button>
-                          </a>
-                        </CardFooter>
-                      </Card>
+                {handwritingResults ? (
+                  <div className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div>
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">Analysis Summary</CardTitle>
+                            <CardDescription>Completed on {new Date(handwritingResults.completedAt).toLocaleDateString()}</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <span>Dyslexia Indicator Score:</span>
+                                <span className="font-medium">{handwritingResults.dyslexiaIndicatorScore}/100</span>
+                              </div>
+                              <Progress 
+                                value={handwritingResults.dyslexiaIndicatorScore} 
+                                className="h-2" 
+                              />
+                              
+                              <div className="flex items-center justify-between">
+                                <span>Risk Level:</span>
+                                <span className={`font-medium ${getHandwritingRiskLevel().color}`}>
+                                  {getHandwritingRiskLevel().level}
+                                </span>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
                       
+                      <div>
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">Key Features Identified</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <ul className="space-y-2">
+                              {handwritingResults.keyFeatures ? (
+                                handwritingResults.keyFeatures.map((feature: string, index: number) => (
+                                  <li key={index} className="flex items-start">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 mr-2"></div>
+                                    <span>{feature}</span>
+                                  </li>
+                                ))
+                              ) : (
+                                <li className="text-gray-500">No specific features identified</li>
+                              )}
+                            </ul>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                    
+                    {handwritingResults.sampleImage && (
                       <Card>
-                        <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-base">Understood.org</CardTitle>
+                        <CardHeader>
+                          <CardTitle className="text-base">Handwriting Sample</CardTitle>
                         </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-sm">Support for parents and individuals with learning differences</p>
+                        <CardContent className="flex justify-center">
+                          <div className="border p-4 rounded-md max-w-md">
+                            <img 
+                              src={handwritingResults.sampleImage} 
+                              alt="Handwriting Sample" 
+                              className="max-w-full h-auto"
+                            />
+                          </div>
                         </CardContent>
-                        <CardFooter className="p-4 pt-0">
-                          <a href="https://www.understood.org/" target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm">Visit Website</Button>
-                          </a>
-                        </CardFooter>
                       </Card>
-                      
+                    )}
+                    
+                    {handwritingResults.recommendations && (
                       <Card>
-                        <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-base">Yale Center for Dyslexia & Creativity</CardTitle>
+                        <CardHeader>
+                          <CardTitle className="text-base">Recommendations</CardTitle>
                         </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-sm">Research and resources highlighting strengths of dyslexic thinking</p>
+                        <CardContent>
+                          <ul className="space-y-2">
+                            {handwritingResults.recommendations.map((rec: string, index: number) => (
+                              <li key={index} className="flex items-start">
+                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 mr-2"></div>
+                                <span>{rec}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </CardContent>
-                        <CardFooter className="p-4 pt-0">
-                          <a href="https://dyslexia.yale.edu/" target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm">Visit Website</Button>
-                          </a>
-                        </CardFooter>
                       </Card>
-                      
-                      <Card>
-                        <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-base">Learning Ally</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-sm">Audiobook solutions and support for dyslexic readers</p>
-                        </CardContent>
-                        <CardFooter className="p-4 pt-0">
-                          <a href="https://learningally.org/" target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm">Visit Website</Button>
-                          </a>
-                        </CardFooter>
-                      </Card>
+                    )}
+                    
+                    <div className="flex justify-center mt-4">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => navigate("/handwriting-analysis")}
+                        className="mr-2"
+                      >
+                        Retake Analysis
+                      </Button>
+                      <Button onClick={navigateToNextAssessment}>
+                        Continue Testing
+                      </Button>
                     </div>
                   </div>
-                  
-                  <div>
-                    <h4 className="text-lg font-medium mb-2">Accommodations & Strategies</h4>
-                    <p className="mb-3">
-                      Depending on your assessment results, these strategies may be helpful:
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 mb-6">
+                      You haven't completed the handwriting analysis yet.
                     </p>
-                    <ul className="list-disc pl-6 space-y-2">
-                      <li>Text-to-speech and speech-to-text technologies</li>
-                      <li>Structured literacy approaches for reading instruction</li>
-                      <li>Extended time for reading and writing tasks</li>
-                      <li>Use of graphic organizers for planning written work</li>
-                      <li>Audiobooks and recorded materials</li>
-                      <li>Color-coding systems for organization</li>
-                      <li>Breaking tasks into smaller, manageable parts</li>
-                    </ul>
-                  </div>
-                  
-                  <div className="text-center mt-6">
-                    <Button 
-                      onClick={handleDownloadReport}
-                      className="flex items-center gap-2 mx-auto"
-                    >
-                      <FileDown className="h-4 w-4" />
-                      Download Comprehensive Report
+                    <Button onClick={() => navigate("/handwriting-analysis")}>
+                      Take Handwriting Analysis
                     </Button>
                   </div>
-                </div>
+                )}
               </TabsContent>
             </Tabs>
           </Card>

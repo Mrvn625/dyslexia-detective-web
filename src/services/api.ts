@@ -14,6 +14,26 @@ const api = axios.create({
   },
 });
 
+// Add response interceptor for error handling
+api.interceptors.response.use(
+  response => response,
+  error => {
+    console.error('API Error:', error);
+    if (error.response) {
+      // Server responded with a status code outside of 2xx range
+      console.error('Response data:', error.response.data);
+      console.error('Response status:', error.response.status);
+    } else if (error.request) {
+      // Request was made but no response was received
+      console.error('No response received:', error.request);
+    } else {
+      // Something else caused the error
+      console.error('Error message:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Test results API
 export const saveTestResultToServer = async (testResult: TestResult, userId: string) => {
   try {
@@ -58,6 +78,38 @@ export const getUserProfile = async (userId: string) => {
     return response.data;
   } catch (error) {
     console.error('Error fetching user profile:', error);
+    return null;
+  }
+};
+
+// Validate if user has a profile
+export const validateUserProfile = async (userId: string) => {
+  try {
+    const response = await api.get(`/validate-profile/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error validating user profile:', error);
+    return { exists: false, profileCompleted: false };
+  }
+};
+
+// Handwriting analysis API
+export const saveHandwritingAnalysis = async (analysis: any, userId: string) => {
+  try {
+    const response = await api.post('/handwriting-analysis', { ...analysis, userId });
+    return response.data;
+  } catch (error) {
+    console.error('Error saving handwriting analysis:', error);
+    throw error;
+  }
+};
+
+export const getHandwritingAnalysis = async (userId: string) => {
+  try {
+    const response = await api.get(`/handwriting-analysis/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching handwriting analysis:', error);
     return null;
   }
 };
