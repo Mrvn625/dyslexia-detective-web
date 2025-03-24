@@ -9,12 +9,13 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' })); // Increased limit for handwriting images
 
 // In-memory storage (replace with your database later)
 let testResults = [];
 let userProfiles = [];
 let handwritingResults = [];
+let checklistResults = [];
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -163,24 +164,6 @@ app.get('/api/validate-profile/:userId', (req, res) => {
   }
 });
 
-// Generate recommendations based on test results
-app.get('/api/recommendations/:userId', (req, res) => {
-  try {
-    const userResults = testResults.filter(result => result.userId === req.params.userId);
-    
-    if (userResults.length === 0) {
-      return res.status(404).json({ message: 'No test results found for this user' });
-    }
-    
-    // This is a simplified version - will be expanded with actual recommendation logic
-    const recommendations = generateRecommendations(userResults);
-    res.json({ recommendations });
-  } catch (error) {
-    console.error(`Error generating recommendations for user ${req.params.userId}:`, error);
-    res.status(500).json({ message: 'Error generating recommendations', error: error.message });
-  }
-});
-
 // Handwriting analysis endpoints
 app.post('/api/handwriting-analysis', (req, res) => {
   try {
@@ -217,7 +200,122 @@ app.get('/api/handwriting-analysis/:userId', (req, res) => {
   }
 });
 
-// Helper function (move to a separate file later)
+// Checklist results
+app.post('/api/checklist-results', (req, res) => {
+  try {
+    const newResult = {
+      id: uuidv4(),
+      ...req.body,
+      completedAt: new Date().toISOString()
+    };
+    
+    checklistResults.push(newResult);
+    res.status(201).json(newResult);
+  } catch (error) {
+    console.error('Error saving checklist result:', error);
+    res.status(500).json({ message: 'Error saving checklist result', error: error.message });
+  }
+});
+
+app.get('/api/checklist-results/:userId', (req, res) => {
+  try {
+    const userResults = checklistResults.filter(result => result.userId === req.params.userId);
+    res.json(userResults);
+  } catch (error) {
+    console.error(`Error fetching checklist results for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Integration point for ML models
+// This is where you would add your CNN and SVM model endpoints
+app.post('/api/ml/analyze-handwriting', (req, res) => {
+  try {
+    // Here you would:
+    // 1. Extract the handwriting image data from req.body
+    // 2. Preprocess the image for your CNN model
+    // 3. Load your CNN model (implementation depends on how you've trained it)
+    // 4. Run the model on the preprocessed image
+    // 5. Process the results and send them back
+    
+    // For now, we'll return a mock response
+    res.json({
+      id: uuidv4(),
+      userId: req.body.userId,
+      handwritingFeatures: {
+        lineSpacing: 0.78,
+        letterSpacing: 0.65,
+        letterConsistency: 0.72,
+        letterRotation: 0.45,
+        pressure: 0.82
+      },
+      dyslexiaIndicators: {
+        score: 0.68,
+        confidence: 0.75,
+        severity: "moderate"
+      },
+      completedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error analyzing handwriting with ML:', error);
+    res.status(500).json({ message: 'Error analyzing handwriting', error: error.message });
+  }
+});
+
+app.post('/api/ml/analyze-test-results', (req, res) => {
+  try {
+    // Here you would:
+    // 1. Extract the test data from req.body
+    // 2. Preprocess the data for your SVM model
+    // 3. Load your SVM model
+    // 4. Run the model on the preprocessed data
+    // 5. Process the results and send them back
+    
+    // Mock response
+    res.json({
+      id: uuidv4(),
+      userId: req.body.userId,
+      analysisResult: {
+        dyslexiaProbability: 0.72,
+        confidence: 0.85,
+        riskLevel: "medium-high",
+        significantFactors: [
+          "working-memory",
+          "phonemic-awareness"
+        ]
+      },
+      recommendations: [
+        "Consider a formal evaluation with a learning specialist",
+        "Practice phonemic awareness exercises daily",
+        "Use working memory enhancement techniques"
+      ],
+      completedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error analyzing test results with ML:', error);
+    res.status(500).json({ message: 'Error analyzing test results', error: error.message });
+  }
+});
+
+// Generate recommendations based on test results
+app.get('/api/recommendations/:userId', (req, res) => {
+  try {
+    const userResults = testResults.filter(result => result.userId === req.params.userId);
+    
+    if (userResults.length === 0) {
+      return res.status(404).json({ message: 'No test results found for this user' });
+    }
+    
+    // This is a simplified version - will be expanded with actual recommendation logic
+    const recommendations = generateRecommendations(userResults);
+    res.json({ recommendations });
+  } catch (error) {
+    console.error(`Error generating recommendations for user ${req.params.userId}:`, error);
+    res.status(500).json({ message: 'Error generating recommendations', error: error.message });
+  }
+});
+
+// Helper function to generate recommendations based on test results
 function generateRecommendations(results) {
   const recommendations = [];
   
@@ -256,7 +354,13 @@ app.listen(PORT, () => {
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
+  app.close(() => {
     console.log('HTTP server closed');
   });
 });
+
+console.log(`ML Model Integration Points:
+- POST /api/ml/analyze-handwriting: Add your CNN model here for handwriting analysis
+- POST /api/ml/analyze-test-results: Add your SVM model here for test result analysis
+- The cognitive test components also have comments indicating where model integration points are
+`);

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import TestSelector from "@/components/cognitive-tests/TestSelector";
 import RapidNamingTest from "@/components/cognitive-tests/RapidNamingTest";
 import PhonemicAwarenessTest from "@/components/cognitive-tests/PhonemicAwarenessTest";
-import ImprovedWorkingMemoryTest from "@/components/cognitive-tests/ImprovedWorkingMemoryTest";
+import WorkingMemoryTest from "@/components/cognitive-tests/WorkingMemoryTest";
 import VisualProcessingTest from "@/components/cognitive-tests/VisualProcessingTest";
 import ProcessingSpeedTest from "@/components/cognitive-tests/ProcessingSpeedTest";
 import SequencingTest from "@/components/cognitive-tests/SequencingTest";
@@ -11,20 +11,25 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useProfileCheck } from "@/hooks/useProfileCheck";
+import { useProfileGuard } from "@/utils/profileGuard";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const CognitiveTests = () => {
   const [selectedTest, setSelectedTest] = useState<string | null>(null);
   const navigate = useNavigate();
   const { userAge } = useProfileCheck();
+  const { isLoading, hasProfile } = useProfileGuard();
 
   // Check for test ID in URL params when component mounts
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const testId = urlParams.get("test");
-    if (testId) {
-      setSelectedTest(testId);
+    if (hasProfile) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const testId = urlParams.get("test");
+      if (testId) {
+        setSelectedTest(testId);
+      }
     }
-  }, []);
+  }, [hasProfile]);
 
   const handleTestComplete = () => {
     navigate("/results");
@@ -67,7 +72,7 @@ const CognitiveTests = () => {
       case "phonemic-awareness":
         return <PhonemicAwarenessTest {...commonProps} />;
       case "working-memory":
-        return <ImprovedWorkingMemoryTest {...commonProps} userAge={userAge || undefined} />;
+        return <WorkingMemoryTest {...commonProps} userAge={userAge || undefined} />;
       case "visual-processing":
         return <VisualProcessingTest {...commonProps} />;
       case "processing-speed":
@@ -78,6 +83,20 @@ const CognitiveTests = () => {
         return null;
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Skeleton className="h-12 w-3/4 mb-4" />
+        <Skeleton className="h-6 w-1/2 mb-8" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <Skeleton key={i} className="h-60 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-8 px-4">

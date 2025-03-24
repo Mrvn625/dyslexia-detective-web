@@ -7,32 +7,48 @@ import { cognitiveTests } from "@/data/cognitiveTestsData";
 import { saveTestResult } from "@/utils/testUtils";
 import { saveTestResultToServer } from "@/services/api";
 
-// Working Memory Test configuration with research-backed thresholds
-// Based on research by Baddeley & Hitch (1974) and later updates by Cowan (2001)
-const memorySequences = [
-  { digits: [3, 1, 7, 9], difficulty: 1 },
-  { digits: [6, 1, 5, 8, 2], difficulty: 2 },
-  { digits: [8, 3, 5, 7, 9, 1], difficulty: 3 },
-  { digits: [2, 5, 1, 7, 3, 9, 4], difficulty: 4 },
-  { digits: [9, 1, 7, 4, 2, 8, 6, 3], difficulty: 5 },
-];
+// Age-appropriate memory sequences
+const getAgeAppropriateSequences = (age: number) => {
+  if (age < 7) { // Young children
+    return [
+      { digits: [3, 1, 7], difficulty: 1 },
+      { digits: [6, 1, 5, 2], difficulty: 2 },
+      { digits: [8, 3, 5, 7, 1], difficulty: 3 }
+    ];
+  } else if (age < 12) { // School-age children
+    return [
+      { digits: [3, 1, 7, 9], difficulty: 1 },
+      { digits: [6, 1, 5, 8, 2], difficulty: 2 },
+      { digits: [8, 3, 5, 7, 9, 1], difficulty: 3 }
+    ];
+  } else { // Teens and adults
+    return [
+      { digits: [3, 1, 7, 9, 2], difficulty: 1 },
+      { digits: [6, 1, 5, 8, 2, 4], difficulty: 2 },
+      { digits: [8, 3, 5, 7, 9, 1, 4], difficulty: 3 }
+    ];
+  }
+};
 
 // Research-based thresholds for different age groups
-// Sources: Gathercole et al. (2004), Alloway et al. (2009)
 const getAgeBasedThresholds = (age: number) => {
   if (age < 7) return { low: 2, medium: 3, high: 4 }; // Young children
   if (age < 12) return { low: 3, medium: 4, high: 5 }; // School-age children
-  if (age < 18) return { low: 4, medium: 5, high: 6 }; // Adolescents
-  if (age < 60) return { low: 5, medium: 6, high: 7 }; // Adults
-  return { low: 4, medium: 5, high: 6 }; // Older adults
+  return { low: 4, medium: 5, high: 6 }; // Teens and adults
 };
 
-const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void; userAge?: number }> = ({ 
+const WorkingMemoryTest: React.FC<{ 
+  onComplete: () => void; 
+  onCancel: () => void; 
+  userAge?: number;
+  onNext?: () => void;
+}> = ({ 
   onComplete, 
   onCancel,
-  userAge = 30 // Default to adult if no age provided
+  userAge = 30,
+  onNext
 }) => {
-  const [testPhase, setTestPhase] = useState<"instructions" | "presentation" | "recall" | "feedback">("instructions");
+  const [testPhase, setTestPhase] = useState<"instructions" | "presentation" | "recall" | "feedback" | "results">("instructions");
   const [currentSequenceIndex, setCurrentSequenceIndex] = useState(0);
   const [userInput, setUserInput] = useState<number[]>([]);
   const [currentDigitIndex, setCurrentDigitIndex] = useState(0);
@@ -41,46 +57,32 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   const [showDigit, setShowDigit] = useState(false);
   const [recallStartTime, setRecallStartTime] = useState<number>(0);
   const [isTestRunning, setIsTestRunning] = useState(false);
+  const [memorySequences, setMemorySequences] = useState<Array<{ digits: number[]; difficulty: number }>>([]);
   
   const { toast } = useToast();
-  
   const test = cognitiveTests.find(test => test.id === "working-memory")!;
-  const currentSequence = memorySequences[currentSequenceIndex];
-  const thresholds = getAgeBasedThresholds(userAge);
   
-  // These refs will track our timers to ensure we can clean them up properly
-  const digitTimerRef = useRef<number | null>(null);
-  const presentationTimerRef = useRef<number | null>(null);
+  // Track timers with proper cleanup
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Clean up all timers when component unmounts or test changes
+  // Update sequences when user age changes
+  useEffect(() => {
+    setMemorySequences(getAgeAppropriateSequences(userAge || 30));
+  }, [userAge]);
+  
+  // Clean up timers when component unmounts
   useEffect(() => {
     return () => {
-      clearAllTimers();
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
     };
   }, []);
   
-  // Reset timers when moving to a new sequence or phase changes
-  useEffect(() => {
-    if (testPhase === "presentation" && isTestRunning) {
-      clearAllTimers();
-      
-      // Small delay before starting presentation to ensure clean state
-      const startTimer = window.setTimeout(() => {
-        startDigitPresentation();
-      }, 500);
-      
-      return () => window.clearTimeout(startTimer);
-    }
-  }, [testPhase, currentSequenceIndex, isTestRunning]);
-  
-  const clearAllTimers = () => {
-    if (digitTimerRef.current !== null) {
-      window.clearTimeout(digitTimerRef.current);
-      digitTimerRef.current = null;
-    }
-    if (presentationTimerRef.current !== null) {
-      window.clearTimeout(presentationTimerRef.current);
-      presentationTimerRef.current = null;
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
   };
   
@@ -91,38 +93,42 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     setCurrentDigitIndex(0);
     setResults([]);
     setIsTestRunning(true);
+    
+    // Start the digit presentation with a delay
+    clearTimer();
+    timerRef.current = setTimeout(() => showNextDigit(), 1000);
   };
   
-  const startDigitPresentation = () => {
-    // Safety check to ensure component is still mounted
-    if (!isTestRunning) return;
+  const showNextDigit = () => {
+    if (!isTestRunning || currentSequenceIndex >= memorySequences.length) return;
     
-    // Show the current digit
-    setShowDigit(true);
+    const currentSequence = memorySequences[currentSequenceIndex];
     
-    // Schedule hiding the digit after 1 second
-    digitTimerRef.current = window.setTimeout(() => {
-      setShowDigit(false);
+    if (currentDigitIndex < currentSequence.digits.length) {
+      // Show current digit
+      setShowDigit(true);
       
-      // Schedule showing the next digit (or moving to recall) after 0.5 seconds
-      presentationTimerRef.current = window.setTimeout(() => {
-        if (!isTestRunning) return;
+      // Hide after 1 second
+      clearTimer();
+      timerRef.current = setTimeout(() => {
+        setShowDigit(false);
         
-        const nextDigitIndex = currentDigitIndex + 1;
-        
-        if (nextDigitIndex < currentSequence.digits.length) {
-          // Move to next digit
-          setCurrentDigitIndex(nextDigitIndex);
-          startDigitPresentation();
-        } else {
-          // All digits presented, move to recall phase
-          setTestPhase("recall");
-          setCurrentDigitIndex(0);
-          setUserInput([]);
-          setRecallStartTime(Date.now());
-        }
-      }, 500);
-    }, 1000);
+        // Show next digit after 0.5 seconds
+        clearTimer();
+        timerRef.current = setTimeout(() => {
+          setCurrentDigitIndex(prev => prev + 1);
+          
+          if (currentDigitIndex + 1 < currentSequence.digits.length) {
+            showNextDigit();
+          } else {
+            // All digits shown, move to recall phase
+            setTestPhase("recall");
+            setUserInput([]);
+            setRecallStartTime(Date.now());
+          }
+        }, 500);
+      }, 1000);
+    }
   };
   
   const handleDigitClick = (digit: number) => {
@@ -136,6 +142,10 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   };
   
   const handleSubmit = () => {
+    if (!memorySequences[currentSequenceIndex]) return;
+    
+    const currentSequence = memorySequences[currentSequenceIndex];
+    
     if (userInput.length !== currentSequence.digits.length) {
       toast({
         title: "Incomplete input",
@@ -145,7 +155,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       return;
     }
     
-    const responseTime = (Date.now() - recallStartTime) / 1000; // Calculate response time in seconds
+    const responseTime = (Date.now() - recallStartTime) / 1000;
     
     // Check if sequence was correctly recalled
     const isCorrect = userInput.every((digit, index) => digit === currentSequence.digits[index]);
@@ -168,38 +178,44 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
   
   const handleNextSequence = () => {
     if (currentSequenceIndex < memorySequences.length - 1) {
+      // Move to next sequence
       setCurrentSequenceIndex(prev => prev + 1);
       setCurrentDigitIndex(0);
       setTestPhase("presentation");
+      
+      // Start showing digits for next sequence after a delay
+      clearTimer();
+      timerRef.current = setTimeout(() => showNextDigit(), 1000);
     } else {
+      // Test is complete
       completeTest();
     }
   };
   
   const completeTest = () => {
     setIsTestRunning(false);
-    clearAllTimers();
+    clearTimer();
     
     const timeSpent = (Date.now() - testStartTime) / 1000;
     
-    // Calculate score based on research-backed metrics
+    // Calculate score
     const correctSequences = results.filter(r => r.isCorrect).length;
     const maxCorrectDifficulty = results.filter(r => r.isCorrect).reduce((max, r) => Math.max(max, r.difficulty), 0);
     
-    // Average response time for correct recalls (speed component)
+    // Calculate average response time for correct recalls
     const avgResponseTime = results
       .filter(r => r.isCorrect && r.responseTime)
       .reduce((sum, r) => sum + (r.responseTime || 0), 0) / (correctSequences || 1);
     
-    // Apply weighting based on research by Alloway & Alloway (2010)
-    // Accuracy (60%), Max Difficulty (30%), Speed (10%)
+    // Calculate score (weighting: accuracy 60%, difficulty 30%, speed 10%)
     const percentageCorrect = (correctSequences / memorySequences.length) * 100;
-    const difficultyScore = (maxCorrectDifficulty / 5) * 100; // 5 is max difficulty
-    const speedScore = Math.max(0, 100 - (avgResponseTime * 5)); // Lower times = higher scores, capped at 100
+    const difficultyScore = (maxCorrectDifficulty / 3) * 100; // 3 is max difficulty
+    const speedScore = Math.max(0, 100 - (avgResponseTime * 5));
     
     const score = Math.round((percentageCorrect * 0.6) + (difficultyScore * 0.3) + (speedScore * 0.1));
     
-    // Interpretation based on thresholds
+    // Get interpretation based on thresholds
+    const thresholds = getAgeBasedThresholds(userAge || 30);
     let interpretation = "";
     if (maxCorrectDifficulty >= thresholds.high) {
       interpretation = "Above average working memory capacity";
@@ -211,7 +227,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       interpretation = "Significantly below average working memory capacity";
     }
     
-    // Create the result object
+    // Create result object
     const testResult = {
       testId: "working-memory",
       score,
@@ -222,10 +238,10 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       maxSpan: maxCorrectDifficulty
     };
     
-    // Save test result locally
+    // Save results
     saveTestResult(testResult);
     
-    // Also save to server if user is logged in (for future implementation)
+    // Save to server if user is logged in
     try {
       const userId = localStorage.getItem("userId");
       if (userId) {
@@ -241,7 +257,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       description: `Your score: ${score}% (${correctSequences} of ${memorySequences.length} sequences correct)`,
     });
     
-    onComplete();
+    setTestPhase("results");
   };
   
   const renderDigitPad = () => {
@@ -272,6 +288,24 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
     );
   };
   
+  // Placeholder for ML model integration
+  // This is where you would add your CNN and SVM models
+  // Example:
+  // const analyzePerformance = (responses: any[]) => {
+  //   // Load your pre-trained model
+  //   // const model = await tf.loadLayersModel('/path/to/cnn-model/model.json');
+  //   // const svmModel = await tf.loadLayersModel('/path/to/svm-model/model.json');
+  //   
+  //   // Prepare input data from user responses
+  //   // const inputTensor = tf.tensor(prepareDataForModel(responses));
+  //   
+  //   // Run prediction
+  //   // const prediction = model.predict(inputTensor);
+  //   
+  //   // Return results
+  //   // return prediction;
+  // };
+  
   return (
     <TestContainer
       test={test}
@@ -279,7 +313,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       totalSteps={memorySequences.length}
       onComplete={completeTest}
       onCancel={() => {
-        clearAllTimers();
+        clearTimer();
         setIsTestRunning(false);
         onCancel();
       }}
@@ -294,9 +328,7 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
             you'll need to recall and input the digits in the exact order they were presented.
           </p>
           <p className="mb-6 text-sm text-gray-600">
-            Research shows that working memory capacity is closely related to reading ability
-            and is often affected in individuals with dyslexia. According to Baddeley's model of working memory,
-            individuals with dyslexia may show deficits in the phonological loop component.
+            Working memory deficits are often associated with dyslexia and other learning differences.
           </p>
           <Button onClick={startTest}>
             Start Test
@@ -309,8 +341,8 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
           <div className="text-sm mb-4">Watch the sequence carefully</div>
           
           <div className="h-40 w-40 flex items-center justify-center border-2 rounded-md bg-slate-50">
-            {showDigit ? (
-              <span className="text-6xl font-bold">{currentSequence.digits[currentDigitIndex]}</span>
+            {showDigit && memorySequences[currentSequenceIndex]?.digits ? (
+              <span className="text-6xl font-bold">{memorySequences[currentSequenceIndex].digits[currentDigitIndex]}</span>
             ) : (
               <span className="text-sm text-gray-400">Next digit coming...</span>
             )}
@@ -332,7 +364,10 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
           {renderDigitPad()}
           
           <div className="mt-6">
-            <Button onClick={handleSubmit} disabled={userInput.length !== currentSequence.digits.length}>
+            <Button 
+              onClick={handleSubmit} 
+              disabled={!memorySequences[currentSequenceIndex] || userInput.length !== memorySequences[currentSequenceIndex].digits.length}
+            >
               Submit Answer
             </Button>
           </div>
@@ -342,19 +377,19 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
       {testPhase === "feedback" && (
         <div className="text-center py-6">
           <h3 className="text-xl font-medium mb-4">
-            {results[currentSequenceIndex].isCorrect ? "Correct!" : "Incorrect"}
+            {results[currentSequenceIndex]?.isCorrect ? "Correct!" : "Incorrect"}
           </h3>
           
           <div className="bg-slate-50 p-4 rounded-md max-w-xs mx-auto mb-6">
             <div className="mb-2">
-              <span className="font-medium">Correct sequence:</span> {results[currentSequenceIndex].sequence.join(' ')}
+              <span className="font-medium">Correct sequence:</span> {results[currentSequenceIndex]?.sequence.join(' ')}
             </div>
             <div>
-              <span className="font-medium">Your input:</span> {results[currentSequenceIndex].userInput.join(' ')}
+              <span className="font-medium">Your input:</span> {results[currentSequenceIndex]?.userInput.join(' ')}
             </div>
-            {results[currentSequenceIndex].responseTime && (
+            {results[currentSequenceIndex]?.responseTime && (
               <div className="mt-2">
-                <span className="font-medium">Response time:</span> {results[currentSequenceIndex].responseTime.toFixed(1)}s
+                <span className="font-medium">Response time:</span> {results[currentSequenceIndex]?.responseTime.toFixed(1)}s
               </div>
             )}
           </div>
@@ -362,6 +397,25 @@ const WorkingMemoryTest: React.FC<{ onComplete: () => void; onCancel: () => void
           <Button onClick={handleNextSequence}>
             {currentSequenceIndex < memorySequences.length - 1 ? "Next Sequence" : "Complete Test"}
           </Button>
+        </div>
+      )}
+      
+      {testPhase === "results" && (
+        <div className="text-center py-6">
+          <h3 className="text-xl font-medium mb-2">Working Memory Test Completed</h3>
+          <p className="mb-6">Thank you for completing this assessment.</p>
+          
+          <div className="flex flex-col gap-4 items-center">
+            <Button onClick={onComplete}>
+              See Your Results
+            </Button>
+            
+            {onNext && (
+              <Button variant="outline" onClick={onNext}>
+                Continue to Next Test
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </TestContainer>
