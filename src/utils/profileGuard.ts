@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
-export const useProfileGuard = () => {
+export const useProfileGuard = (redirectTo = '/user-profile') => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
   const navigate = useNavigate();
@@ -20,10 +20,9 @@ export const useProfileGuard = () => {
         if (!userProfile) {
           toast({
             title: "Profile Required",
-            description: "Please create a profile before accessing this page",
-            variant: "destructive",
+            description: "Please create a profile to continue",
           });
-          navigate('/user-profile');
+          navigate(redirectTo);
           return;
         }
         
@@ -32,11 +31,10 @@ export const useProfileGuard = () => {
           const profile = JSON.parse(userProfile);
           if (!profile.name || !profile.age) {
             toast({
-              title: "Incomplete Profile",
-              description: "Please complete your profile before accessing this page",
-              variant: "destructive",
+              title: "Complete Your Profile",
+              description: "Please complete your profile information",
             });
-            navigate('/user-profile');
+            navigate(redirectTo);
             return;
           }
           
@@ -51,18 +49,16 @@ export const useProfileGuard = () => {
           console.error("Error parsing profile:", error);
           toast({
             title: "Profile Error",
-            description: "There was an error with your profile data. Please recreate your profile.",
-            variant: "destructive",
+            description: "There was an error with your profile data.",
           });
-          navigate('/user-profile');
+          navigate(redirectTo);
           return;
         }
       } catch (error) {
         console.error("Error checking profile:", error);
         toast({
           title: "Error",
-          description: "There was an error checking your profile. Please try again.",
-          variant: "destructive",
+          description: "There was an error checking your profile.",
         });
       } finally {
         setIsLoading(false);
@@ -70,7 +66,7 @@ export const useProfileGuard = () => {
     };
     
     checkUserProfile();
-  }, [navigate, toast]);
+  }, [navigate, toast, redirectTo]);
 
   return { isLoading, hasProfile };
 };

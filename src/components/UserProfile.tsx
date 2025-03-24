@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -60,8 +59,8 @@ const UserProfile: React.FC = () => {
       description: "Your profile information has been saved successfully.",
     });
     
-    // Redirect to the tests page
-    navigate("/cognitive-tests");
+    // Redirect to the checklist page instead of cognitive tests
+    navigate("/checklist");
   };
 
   return (

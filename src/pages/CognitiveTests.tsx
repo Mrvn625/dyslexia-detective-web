@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import TestSelector from "@/components/cognitive-tests/TestSelector";
 import RapidNamingTest from "@/components/cognitive-tests/RapidNamingTest";
@@ -167,23 +166,7 @@ const CognitiveTests = () => {
   }
 
   if (!hasProfile) {
-    return (
-      <div className="container mx-auto py-8 px-4">
-        <Alert variant="destructive" className="mb-6">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Profile Required</AlertTitle>
-          <AlertDescription>
-            You need to create a profile before you can take cognitive tests.
-          </AlertDescription>
-        </Alert>
-        
-        <div className="flex justify-center mt-6">
-          <Button onClick={() => navigate("/user-profile")}>
-            Create Your Profile
-          </Button>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

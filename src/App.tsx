@@ -16,7 +16,14 @@ import Results from "./pages/Results";
 import UserProfile from "./components/UserProfile";
 import TestReport from "./components/TestReport";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

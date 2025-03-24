@@ -7,7 +7,6 @@ import { cognitiveTests } from "@/data/cognitiveTestsData";
 import { getTestResult } from "@/utils/testUtils";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { useProfileCheck } from "@/hooks/useProfileCheck";
 
 const TestSelector: React.FC<{ 
   onSelectTest: (testId: string) => void;
@@ -15,19 +14,8 @@ const TestSelector: React.FC<{
 }> = ({ onSelectTest, className = "" }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hasProfile, isLoading } = useProfileCheck();
   
   const handleSelectTest = (testId: string) => {
-    if (!hasProfile && !isLoading) {
-      toast({
-        title: "Profile Required",
-        description: "Please create a user profile before taking cognitive tests for accurate results.",
-        variant: "destructive",
-      });
-      navigate("/profile");
-      return;
-    }
-    
     onSelectTest(testId);
   };
   
@@ -75,27 +63,6 @@ const TestSelector: React.FC<{
           );
         })}
       </div>
-      
-      {!hasProfile && !isLoading && (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-amber-800 flex items-start">
-          <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" /> 
-          <div>
-            <p className="font-medium">Profile Required</p>
-            <p className="text-sm mt-1">
-              Creating a user profile is strongly recommended before taking cognitive tests.
-              Your age and other information helps calibrate the test results appropriately.
-            </p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-2 bg-white"
-              onClick={() => navigate("/profile")}
-            >
-              Create Profile
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

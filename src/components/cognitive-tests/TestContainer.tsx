@@ -15,6 +15,7 @@ interface TestContainerProps {
   totalSteps: number;
   onComplete: () => void;
   onCancel: () => void;
+  onNext?: () => void;
   timeRemaining?: number;
   showTimer?: boolean;
 }
@@ -26,6 +27,7 @@ const TestContainer: React.FC<TestContainerProps> = ({
   totalSteps,
   onComplete,
   onCancel,
+  onNext,
   timeRemaining,
   showTimer = false,
 }) => {
@@ -68,6 +70,14 @@ const TestContainer: React.FC<TestContainerProps> = ({
         description: "There was a problem starting the test.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleCompleteTest = () => {
+    if (onNext) {
+      onNext();
+    } else {
+      onComplete();
     }
   };
   
@@ -131,8 +141,8 @@ const TestContainer: React.FC<TestContainerProps> = ({
               Cancel Test
             </Button>
             {currentStep === totalSteps && (
-              <Button onClick={onComplete}>
-                Complete Test
+              <Button onClick={handleCompleteTest}>
+                {onNext ? "Next Test" : "Complete Test"}
               </Button>
             )}
           </CardFooter>
