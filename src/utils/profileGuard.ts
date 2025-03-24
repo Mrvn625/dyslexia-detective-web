@@ -1,5 +1,4 @@
 
-import { getUserProfile, validateUserProfile } from '@/services/api';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -12,41 +11,59 @@ export const useProfileGuard = () => {
 
   useEffect(() => {
     const checkUserProfile = async () => {
-      setIsLoading(true);
-      const userId = localStorage.getItem('userId');
-      
-      if (!userId) {
-        toast({
-          title: "Profile Required",
-          description: "Please create a profile before accessing this page",
-          variant: "destructive",
-        });
-        navigate('/profile');
-        return;
-      }
-      
       try {
-        const validation = await validateUserProfile(userId);
+        setIsLoading(true);
         
-        if (!validation.exists || !validation.profileCompleted) {
+        // Check for profile in localStorage
+        const userProfile = localStorage.getItem('userProfile');
+        
+        if (!userProfile) {
           toast({
             title: "Profile Required",
-            description: "Please complete your profile before accessing this page",
+            description: "Please create a profile before accessing this page",
             variant: "destructive",
           });
-          navigate('/profile');
+          navigate('/user-profile');
           return;
         }
         
-        setHasProfile(true);
+        // Validate the profile data has the minimum required fields
+        try {
+          const profile = JSON.parse(userProfile);
+          if (!profile.name || !profile.age) {
+            toast({
+              title: "Incomplete Profile",
+              description: "Please complete your profile before accessing this page",
+              variant: "destructive",
+            });
+            navigate('/user-profile');
+            return;
+          }
+          
+          // Store user ID in localStorage if not already there (for API purposes)
+          if (profile.name && !localStorage.getItem('userId')) {
+            // Create a simple user ID based on name (in a real app, this would come from backend)
+            localStorage.setItem('userId', btoa(profile.name));
+          }
+          
+          setHasProfile(true);
+        } catch (error) {
+          console.error("Error parsing profile:", error);
+          toast({
+            title: "Profile Error",
+            description: "There was an error with your profile data. Please recreate your profile.",
+            variant: "destructive",
+          });
+          navigate('/user-profile');
+          return;
+        }
       } catch (error) {
-        console.error("Error validating profile:", error);
+        console.error("Error checking profile:", error);
         toast({
           title: "Error",
           description: "There was an error checking your profile. Please try again.",
           variant: "destructive",
         });
-        navigate('/profile');
       } finally {
         setIsLoading(false);
       }
